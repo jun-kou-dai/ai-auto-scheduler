@@ -95,13 +95,9 @@ function AppRouter() {
 }
 
 export default function App() {
-  // Phase A2: If env is invalid, show missing keys (no crash)
+  // Phase A2: Log missing env vars as warning, but don't block the app
   if (!envResult.ok) {
-    return (
-      <ErrorBoundary>
-        <EnvError missing={envResult.missing} />
-      </ErrorBoundary>
-    );
+    console.warn('[ENV] Missing environment variables:', envResult.missing.join(', '));
   }
 
   return (
