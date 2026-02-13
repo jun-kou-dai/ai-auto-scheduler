@@ -224,6 +224,11 @@ export function ProposalScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
                           {task?.preferred_time ? ` | ${task.preferred_time}希望` : ''}
                           {task?.deadline ? ` | 締切: ${new Date(task.deadline).toLocaleDateString('ja-JP')}` : ''}
                         </Text>
+                        {evt.warning && (
+                          <View style={styles.warningBanner}>
+                            <Text style={styles.warningText}>⚠ {evt.warning}</Text>
+                          </View>
+                        )}
                       </TouchableOpacity>
 
                       {/* Expanded body: separate from header touchable */}
@@ -494,6 +499,18 @@ const styles = StyleSheet.create({
   proposalTitle: { fontSize: 15, fontWeight: '600', color: '#1E293B', flex: 1 },
   proposalTime: { fontSize: 13, color: '#3B82F6', fontWeight: '600', marginBottom: 2 },
   proposalDuration: { fontSize: 12, color: '#64748B' },
+  warningBanner: {
+    backgroundColor: '#FEF3C7',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    marginTop: 6,
+  },
+  warningText: {
+    fontSize: 12,
+    color: '#92400E',
+    fontWeight: '600',
+  },
   expandedSection: {
     marginTop: 12,
     paddingTop: 12,

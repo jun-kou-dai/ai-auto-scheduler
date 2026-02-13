@@ -123,6 +123,38 @@ export function generateProposal(tasks: Task[], freeSlots: FreeSlot[]): Proposal
       }
     }
 
+    // Fallback: if deadline prevented placement, retry ignoring deadline
+    if (!placed && deadlineDate) {
+      for (const { slot, idx } of scoredSlots) {
+        if (slot.durationMinutes >= needed) {
+          const proposedEnd = new Date(slot.start.getTime() + needed * 60000);
+          const eventStart = slot.start.toISOString();
+          const eventEnd = proposedEnd.toISOString();
+
+          const deadlineLabel = deadlineDate.toLocaleDateString('ja-JP');
+          events.push({
+            taskId: task.id,
+            title: task.name,
+            start: eventStart,
+            end: eventEnd,
+            warning: `締切（${deadlineLabel}）を過ぎていますが、最短の空き枠に配置しました`,
+          });
+
+          remainingSlots[idx] = {
+            start: proposedEnd,
+            end: slot.end,
+            durationMinutes: (slot.end.getTime() - proposedEnd.getTime()) / 60000,
+          };
+          if (remainingSlots[idx].durationMinutes < 15) {
+            remainingSlots.splice(idx, 1);
+          }
+
+          placed = true;
+          break;
+        }
+      }
+    }
+
     if (!placed) {
       // Determine reason
       let reason: string;
@@ -130,8 +162,6 @@ export function generateProposal(tasks: Task[], freeSlots: FreeSlot[]): Proposal
 
       if (totalFree < needed) {
         reason = `空き時間が不足（必要: ${needed}分、残り: ${Math.round(totalFree)}分）。来週の配置を検討してください。`;
-      } else if (task.deadline) {
-        reason = `締切（${new Date(task.deadline).toLocaleDateString('ja-JP')}）までに十分な連続空き時間がありません。`;
       } else {
         reason = `${needed}分以上の連続空き枠が見つかりません。タスクの分割を検討してください。`;
       }

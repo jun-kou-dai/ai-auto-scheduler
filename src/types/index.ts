@@ -21,6 +21,7 @@ export interface ProposalEvent {
   title: string;
   start: string; // ISO string
   end: string; // ISO string
+  warning?: string; // e.g. deadline exceeded
 }
 
 export interface UnassignedTask {
