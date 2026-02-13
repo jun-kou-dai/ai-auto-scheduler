@@ -1,4 +1,5 @@
 // Screen 4: Proposal - show proposed events, unassigned reasons, approve
+// Tasks are expandable and editable; editing triggers re-proposal
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View,
@@ -12,6 +13,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { getBusySlots, calculateFreeSlots, createEventsFromProposal } from '../services/calendar';
 import { generateProposal } from '../services/scheduler';
 import { Task, Proposal, Screen } from '../types';
+import { TaskEditModal } from '../components/TaskEditModal';
 
 interface Props {
   onNavigate: (screen: Screen) => void;
@@ -27,6 +29,11 @@ export function ProposalScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
   const [state, setState] = useState<ProposalState>('loading');
   const [error, setError] = useState<string | null>(null);
   const [createdCount, setCreatedCount] = useState(0);
+  const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
+
+  // Store free slots for re-proposal after edit
+  const freeSlotsRef = useRef<any[]>([]);
 
   const mountedRef = useRef(true);
   useEffect(() => {
@@ -52,6 +59,7 @@ export function ProposalScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
       const busySlots = await getBusySlots(accessToken, 7);
       // Calculate free slots
       const freeSlots = calculateFreeSlots(busySlots, 7);
+      freeSlotsRef.current = freeSlots;
       // Generate proposal
       const unassignedTasks = tasks.filter((t) => t.status === 'unassigned');
       const prop = generateProposal(unassignedTasks, freeSlots);
@@ -61,6 +69,22 @@ export function ProposalScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
       setError(err instanceof Error ? err.message : String(err));
       setState('error');
     }
+  };
+
+  // Re-propose using cached free slots (no extra API call)
+  const rePropose = useCallback((updatedTasks: Task[]) => {
+    const unassignedTasks = updatedTasks.filter((t) => t.status === 'unassigned');
+    const prop = generateProposal(unassignedTasks, freeSlotsRef.current);
+    setProposal(prop);
+  }, []);
+
+  const handleSaveEdit = (updated: Task) => {
+    const newTasks = tasks.map((t) => (t.id === updated.id ? updated : t));
+    onTasksUpdated(newTasks);
+    setEditingTask(null);
+    setExpandedTaskId(null);
+    // Re-generate proposal with updated task
+    rePropose(newTasks);
   };
 
   const handleApprove = async () => {
@@ -94,6 +118,10 @@ export function ProposalScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
   };
 
   const getTaskById = (id: string) => tasks.find((t) => t.id === id);
+
+  const toggleExpand = (taskId: string) => {
+    setExpandedTaskId((prev) => (prev === taskId ? null : taskId));
+  };
 
   return (
     <View style={styles.container}>
@@ -146,6 +174,8 @@ export function ProposalScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
 
         {(state === 'ready' || state === 'approving') && proposal && (
           <>
+            <Text style={styles.hintText}>カードをタップで詳細表示・編集</Text>
+
             {/* Scheduled events */}
             {proposal.events.length > 0 && (
               <View style={styles.section}>
@@ -154,6 +184,7 @@ export function ProposalScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
                 </Text>
                 {proposal.events.map((evt, i) => {
                   const task = getTaskById(evt.taskId);
+                  const isExpanded = expandedTaskId === evt.taskId;
                   const startDate = new Date(evt.start);
                   const endDate = new Date(evt.end);
                   const dayLabel = startDate.toLocaleDateString('ja-JP', {
@@ -164,25 +195,73 @@ export function ProposalScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
                   const timeLabel = `${startDate.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })} - ${endDate.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}`;
 
                   return (
-                    <View key={i} style={styles.proposalCard}>
-                      <View style={styles.proposalCardHeader}>
-                        <Text style={styles.proposalTitle}>{evt.title}</Text>
-                        {task && <PriorityBadge priority={task.priority} />}
-                      </View>
-                      <Text style={styles.proposalTime}>
-                        {dayLabel}  {timeLabel}
-                      </Text>
-                      <Text style={styles.proposalDuration}>
-                        {task ? `${task.duration_minutes}分` : ''}
-                        {task?.preferred_time ? ` | ${task.preferred_time}希望` : ''}
-                        {task?.deadline ? ` | 締切: ${new Date(task.deadline).toLocaleDateString('ja-JP')}` : ''}
-                      </Text>
-                      {task?.reasoning ? (
-                        <View style={styles.reasoningBox}>
-                          <Text style={styles.reasoningLabel}>AI根拠:</Text>
-                          <Text style={styles.reasoningText}>{task.reasoning}</Text>
+                    <View key={i} style={[styles.proposalCard, isExpanded && styles.proposalCardExpanded]}>
+                      {/* Header: tap to expand/collapse */}
+                      <TouchableOpacity
+                        onPress={() => toggleExpand(evt.taskId)}
+                        activeOpacity={0.7}
+                      >
+                        <View style={styles.proposalCardHeader}>
+                          <Text style={styles.proposalTitle}>{evt.title}</Text>
+                          <View style={styles.cardHeaderRight}>
+                            {task && <PriorityBadge priority={task.priority} />}
+                            <Text style={styles.expandArrow}>{isExpanded ? '▲' : '▼'}</Text>
+                          </View>
                         </View>
-                      ) : null}
+                        <Text style={styles.proposalTime}>
+                          {dayLabel}  {timeLabel}
+                        </Text>
+                        <Text style={styles.proposalDuration}>
+                          {task ? `${task.duration_minutes}分` : ''}
+                          {task?.preferred_time ? ` | ${task.preferred_time}希望` : ''}
+                          {task?.deadline ? ` | 締切: ${new Date(task.deadline).toLocaleDateString('ja-JP')}` : ''}
+                        </Text>
+                      </TouchableOpacity>
+
+                      {/* Expanded body: separate from header touchable */}
+                      {isExpanded && task && (
+                        <View style={styles.expandedSection}>
+                          <View style={styles.detailRow}>
+                            <Text style={styles.detailLabel}>元の入力:</Text>
+                            <Text style={styles.detailValue}>「{task.raw}」</Text>
+                          </View>
+
+                          {task.reasoning ? (
+                            <View style={styles.reasoningBox}>
+                              <Text style={styles.reasoningLabel}>AI推定の根拠:</Text>
+                              <Text style={styles.reasoningText}>{task.reasoning}</Text>
+                            </View>
+                          ) : null}
+
+                          <View style={styles.detailGrid}>
+                            <View style={styles.detailItem}>
+                              <Text style={styles.detailLabel}>所要時間</Text>
+                              <Text style={styles.detailValue}>{task.duration_minutes}分</Text>
+                            </View>
+                            <View style={styles.detailItem}>
+                              <Text style={styles.detailLabel}>優先度</Text>
+                              <Text style={styles.detailValue}>{task.priority}</Text>
+                            </View>
+                            <View style={styles.detailItem}>
+                              <Text style={styles.detailLabel}>締切</Text>
+                              <Text style={styles.detailValue}>
+                                {task.deadline ? new Date(task.deadline).toLocaleDateString('ja-JP') : 'なし'}
+                              </Text>
+                            </View>
+                            <View style={styles.detailItem}>
+                              <Text style={styles.detailLabel}>希望時間帯</Text>
+                              <Text style={styles.detailValue}>{task.preferred_time || 'なし'}</Text>
+                            </View>
+                          </View>
+
+                          <TouchableOpacity
+                            style={styles.editButton}
+                            onPress={() => setEditingTask({ ...task })}
+                          >
+                            <Text style={styles.editButtonText}>編集して再提案</Text>
+                          </TouchableOpacity>
+                        </View>
+                      )}
                     </View>
                   );
                 })}
@@ -197,12 +276,65 @@ export function ProposalScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
                 </Text>
                 {proposal.unassigned.map((item, i) => {
                   const task = getTaskById(item.taskId);
+                  const isExpanded = expandedTaskId === item.taskId;
                   return (
-                    <View key={i} style={styles.unassignedCard}>
-                      <Text style={styles.unassignedName}>
-                        {task?.name || '不明なタスク'}
-                      </Text>
-                      <Text style={styles.unassignedReason}>{item.reason}</Text>
+                    <View key={i} style={[styles.unassignedCard, isExpanded && styles.unassignedCardExpanded]}>
+                      <TouchableOpacity
+                        onPress={() => toggleExpand(item.taskId)}
+                        activeOpacity={0.7}
+                      >
+                        <View style={styles.proposalCardHeader}>
+                          <Text style={styles.unassignedName}>
+                            {task?.name || '不明なタスク'}
+                          </Text>
+                          <Text style={styles.expandArrow}>{isExpanded ? '▲' : '▼'}</Text>
+                        </View>
+                        <Text style={styles.unassignedReason}>{item.reason}</Text>
+                      </TouchableOpacity>
+
+                      {isExpanded && task && (
+                        <View style={styles.expandedSection}>
+                          <View style={styles.detailRow}>
+                            <Text style={styles.detailLabel}>元の入力:</Text>
+                            <Text style={styles.detailValue}>「{task.raw}」</Text>
+                          </View>
+
+                          {task.reasoning ? (
+                            <View style={styles.reasoningBox}>
+                              <Text style={styles.reasoningLabel}>AI推定の根拠:</Text>
+                              <Text style={styles.reasoningText}>{task.reasoning}</Text>
+                            </View>
+                          ) : null}
+
+                          <View style={styles.detailGrid}>
+                            <View style={styles.detailItem}>
+                              <Text style={styles.detailLabel}>所要時間</Text>
+                              <Text style={styles.detailValue}>{task.duration_minutes}分</Text>
+                            </View>
+                            <View style={styles.detailItem}>
+                              <Text style={styles.detailLabel}>優先度</Text>
+                              <Text style={styles.detailValue}>{task.priority}</Text>
+                            </View>
+                            <View style={styles.detailItem}>
+                              <Text style={styles.detailLabel}>締切</Text>
+                              <Text style={styles.detailValue}>
+                                {task.deadline ? new Date(task.deadline).toLocaleDateString('ja-JP') : 'なし'}
+                              </Text>
+                            </View>
+                            <View style={styles.detailItem}>
+                              <Text style={styles.detailLabel}>希望時間帯</Text>
+                              <Text style={styles.detailValue}>{task.preferred_time || 'なし'}</Text>
+                            </View>
+                          </View>
+
+                          <TouchableOpacity
+                            style={styles.editButton}
+                            onPress={() => setEditingTask({ ...task })}
+                          >
+                            <Text style={styles.editButtonText}>編集して再提案</Text>
+                          </TouchableOpacity>
+                        </View>
+                      )}
                     </View>
                   );
                 })}
@@ -239,6 +371,16 @@ export function ProposalScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
           </TouchableOpacity>
         </View>
       )}
+
+      {/* Edit Modal */}
+      {editingTask && (
+        <TaskEditModal
+          key={editingTask.id}
+          task={editingTask}
+          onSave={handleSaveEdit}
+          onCancel={() => setEditingTask(null)}
+        />
+      )}
     </View>
   );
 }
@@ -268,6 +410,12 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 17, fontWeight: '700', color: '#1E293B' },
   scroll: { flex: 1 },
   scrollContent: { padding: 16 },
+  hintText: {
+    fontSize: 12,
+    color: '#94A3B8',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
   loadingBox: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60 },
   loadingText: { marginTop: 16, color: '#64748B', fontSize: 14, textAlign: 'center', lineHeight: 22 },
   errorBox: {
@@ -316,20 +464,52 @@ const styles = StyleSheet.create({
     padding: 14,
     marginBottom: 8,
   },
+  proposalCardExpanded: {
+    borderColor: '#3B82F6',
+    borderWidth: 1.5,
+  },
   proposalCardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 6,
   },
+  cardHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  expandArrow: {
+    fontSize: 10,
+    color: '#94A3B8',
+  },
   proposalTitle: { fontSize: 15, fontWeight: '600', color: '#1E293B', flex: 1 },
   proposalTime: { fontSize: 13, color: '#3B82F6', fontWeight: '600', marginBottom: 2 },
   proposalDuration: { fontSize: 12, color: '#64748B' },
+  expandedSection: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+  },
+  detailRow: {
+    marginBottom: 8,
+  },
+  detailLabel: {
+    fontSize: 11,
+    color: '#94A3B8',
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  detailValue: {
+    fontSize: 13,
+    color: '#1E293B',
+  },
   reasoningBox: {
     backgroundColor: '#EFF6FF',
-    borderRadius: 6,
-    padding: 8,
-    marginTop: 8,
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 12,
     borderLeftWidth: 3,
     borderLeftColor: '#3B82F6',
   },
@@ -337,12 +517,38 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     color: '#3B82F6',
-    marginBottom: 2,
+    marginBottom: 4,
   },
   reasoningText: {
-    fontSize: 12,
+    fontSize: 13,
     color: '#1E40AF',
-    lineHeight: 18,
+    lineHeight: 20,
+  },
+  detailGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 12,
+  },
+  detailItem: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    padding: 8,
+    minWidth: '45%',
+    flex: 1,
+  },
+  editButton: {
+    backgroundColor: '#EFF6FF',
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+  },
+  editButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#3B82F6',
   },
   unassignedCard: {
     backgroundColor: '#FFFBEB',
@@ -351,6 +557,10 @@ const styles = StyleSheet.create({
     borderColor: '#FDE68A',
     padding: 14,
     marginBottom: 8,
+  },
+  unassignedCardExpanded: {
+    borderColor: '#F59E0B',
+    borderWidth: 1.5,
   },
   unassignedName: { fontSize: 14, fontWeight: '600', color: '#92400E', marginBottom: 4 },
   unassignedReason: { fontSize: 13, color: '#78350F', lineHeight: 20 },

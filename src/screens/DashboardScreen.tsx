@@ -9,12 +9,11 @@ import {
   ActivityIndicator,
   RefreshControl,
   Image,
-  TextInput,
-  Modal,
 } from 'react-native';
 import { useAuth } from '../contexts/AuthContext';
 import { getUpcomingEvents } from '../services/calendar';
-import { CalendarEvent, Screen, Task, Priority, PreferredTime } from '../types';
+import { CalendarEvent, Screen, Task } from '../types';
+import { TaskEditModal } from '../components/TaskEditModal';
 
 interface Props {
   onNavigate: (screen: Screen) => void;
@@ -173,34 +172,34 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
                 {unassignedTasks.map((t) => {
                   const isExpanded = expandedTaskId === t.id;
                   return (
-                    <TouchableOpacity
-                      key={t.id}
-                      style={[styles.taskCard, isExpanded && styles.taskCardExpanded]}
-                      onPress={() => toggleExpand(t.id)}
-                      activeOpacity={0.7}
-                    >
-                      <View style={styles.taskHeader}>
-                        <Text style={styles.taskName}>{t.name}</Text>
-                        <View style={styles.taskHeaderRight}>
-                          <PriorityBadge priority={t.priority} />
-                          <Text style={styles.expandArrow}>{isExpanded ? '▲' : '▼'}</Text>
+                    <View key={t.id} style={[styles.taskCard, isExpanded && styles.taskCardExpanded]}>
+                      {/* Header: tap to expand/collapse */}
+                      <TouchableOpacity
+                        onPress={() => toggleExpand(t.id)}
+                        activeOpacity={0.7}
+                      >
+                        <View style={styles.taskHeader}>
+                          <Text style={styles.taskName}>{t.name}</Text>
+                          <View style={styles.taskHeaderRight}>
+                            <PriorityBadge priority={t.priority} />
+                            <Text style={styles.expandArrow}>{isExpanded ? '▲' : '▼'}</Text>
+                          </View>
                         </View>
-                      </View>
-                      <Text style={styles.taskDetail}>
-                        {t.duration_minutes}分
-                        {t.deadline ? ` | 締切: ${new Date(t.deadline).toLocaleDateString('ja-JP')}` : ''}
-                        {t.preferred_time ? ` | ${t.preferred_time}希望` : ''}
-                      </Text>
+                        <Text style={styles.taskDetail}>
+                          {t.duration_minutes}分
+                          {t.deadline ? ` | 締切: ${new Date(t.deadline).toLocaleDateString('ja-JP')}` : ''}
+                          {t.preferred_time ? ` | ${t.preferred_time}希望` : ''}
+                        </Text>
+                      </TouchableOpacity>
 
+                      {/* Expanded body: separate from header touchable */}
                       {isExpanded && (
                         <View style={styles.taskExpanded}>
-                          {/* Original input */}
                           <View style={styles.detailRow}>
                             <Text style={styles.detailLabel}>元の入力:</Text>
                             <Text style={styles.detailValue}>「{t.raw}」</Text>
                           </View>
 
-                          {/* AI reasoning */}
                           {t.reasoning ? (
                             <View style={styles.reasoningBox}>
                               <Text style={styles.reasoningLabel}>AI推定の根拠:</Text>
@@ -208,7 +207,6 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
                             </View>
                           ) : null}
 
-                          {/* All details */}
                           <View style={styles.detailGrid}>
                             <View style={styles.detailItem}>
                               <Text style={styles.detailLabel}>所要時間</Text>
@@ -230,7 +228,6 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
                             </View>
                           </View>
 
-                          {/* Edit button */}
                           <TouchableOpacity
                             style={styles.editButton}
                             onPress={() => setEditingTask({ ...t })}
@@ -239,19 +236,10 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
                           </TouchableOpacity>
                         </View>
                       )}
-                    </TouchableOpacity>
+                    </View>
                   );
                 })}
               </View>
-            )}
-
-            {/* Edit Modal */}
-            {editingTask && (
-              <TaskEditModal
-                task={editingTask}
-                onSave={handleSaveEdit}
-                onCancel={() => setEditingTask(null)}
-              />
             )}
           </>
         )}
@@ -266,6 +254,16 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
           <Text style={styles.mainButtonText}>タスクを入力して提案作成</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Edit Modal - outside ScrollView */}
+      {editingTask && (
+        <TaskEditModal
+          key={editingTask.id}
+          task={editingTask}
+          onSave={handleSaveEdit}
+          onCancel={() => setEditingTask(null)}
+        />
+      )}
     </View>
   );
 }
@@ -298,242 +296,6 @@ function PriorityBadge({ priority }: { priority: string }) {
     </View>
   );
 }
-
-function TaskEditModal({
-  task,
-  onSave,
-  onCancel,
-}: {
-  task: Task;
-  onSave: (t: Task) => void;
-  onCancel: () => void;
-}) {
-  const [name, setName] = useState(task.name);
-  const [duration, setDuration] = useState(String(task.duration_minutes));
-  const [priority, setPriority] = useState<Priority>(task.priority);
-  const [deadline, setDeadline] = useState(
-    task.deadline ? new Date(task.deadline).toLocaleDateString('ja-JP') : ''
-  );
-  const [preferredTime, setPreferredTime] = useState<PreferredTime>(task.preferred_time);
-
-  const priorities: Priority[] = ['高', '中', '低'];
-  const timeSlots: { label: string; value: PreferredTime }[] = [
-    { label: '指定なし', value: null },
-    { label: '午前', value: '午前' },
-    { label: '午後', value: '午後' },
-    { label: '夜', value: '夜' },
-  ];
-
-  const handleSave = () => {
-    const durationNum = parseInt(duration, 10);
-    // Parse deadline: support YYYY/MM/DD, YYYY-MM-DD, or Japanese format
-    let parsedDeadline: string | null = null;
-    if (deadline.trim()) {
-      const d = new Date(deadline.replace(/\//g, '-').replace(/年|月/g, '-').replace(/日/g, ''));
-      if (!isNaN(d.getTime())) {
-        parsedDeadline = d.toISOString();
-      } else {
-        parsedDeadline = task.deadline; // keep original if parse fails
-      }
-    }
-    onSave({
-      ...task,
-      name,
-      duration_minutes: isNaN(durationNum) || durationNum <= 0 ? task.duration_minutes : durationNum,
-      priority,
-      deadline: parsedDeadline,
-      preferred_time: preferredTime,
-    });
-  };
-
-  return (
-    <Modal transparent animationType="slide" onRequestClose={onCancel}>
-      <View style={modalStyles.overlay}>
-        <View style={modalStyles.container}>
-          <Text style={modalStyles.title}>タスクを編集</Text>
-
-          {/* Name */}
-          <Text style={modalStyles.label}>タスク名</Text>
-          <TextInput
-            style={modalStyles.input}
-            value={name}
-            onChangeText={setName}
-          />
-
-          {/* Duration */}
-          <Text style={modalStyles.label}>所要時間（分）</Text>
-          <TextInput
-            style={modalStyles.input}
-            value={duration}
-            onChangeText={setDuration}
-            keyboardType="number-pad"
-          />
-
-          {/* Priority */}
-          <Text style={modalStyles.label}>優先度</Text>
-          <View style={modalStyles.chipRow}>
-            {priorities.map((p) => (
-              <TouchableOpacity
-                key={p}
-                style={[
-                  modalStyles.chip,
-                  priority === p && modalStyles.chipActive,
-                ]}
-                onPress={() => setPriority(p)}
-              >
-                <Text
-                  style={[
-                    modalStyles.chipText,
-                    priority === p && modalStyles.chipTextActive,
-                  ]}
-                >
-                  {p}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          {/* Deadline */}
-          <Text style={modalStyles.label}>締切（YYYY/MM/DD）</Text>
-          <TextInput
-            style={modalStyles.input}
-            value={deadline}
-            onChangeText={setDeadline}
-            placeholder="例: 2026/02/15（空欄で締切なし）"
-            placeholderTextColor="#94A3B8"
-          />
-
-          {/* Preferred time */}
-          <Text style={modalStyles.label}>希望時間帯</Text>
-          <View style={modalStyles.chipRow}>
-            {timeSlots.map((slot) => (
-              <TouchableOpacity
-                key={slot.label}
-                style={[
-                  modalStyles.chip,
-                  preferredTime === slot.value && modalStyles.chipActive,
-                ]}
-                onPress={() => setPreferredTime(slot.value)}
-              >
-                <Text
-                  style={[
-                    modalStyles.chipText,
-                    preferredTime === slot.value && modalStyles.chipTextActive,
-                  ]}
-                >
-                  {slot.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          {/* Buttons */}
-          <View style={modalStyles.buttonRow}>
-            <TouchableOpacity style={modalStyles.cancelButton} onPress={onCancel}>
-              <Text style={modalStyles.cancelButtonText}>キャンセル</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={modalStyles.saveButton} onPress={handleSave}>
-              <Text style={modalStyles.saveButtonText}>保存</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
-}
-
-const modalStyles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
-  },
-  container: {
-    backgroundColor: '#FFF',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 24,
-    paddingBottom: 40,
-    maxHeight: '85%',
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#1E293B',
-    marginBottom: 20,
-    textAlign: 'center',
-  },
-  label: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#64748B',
-    marginBottom: 6,
-    marginTop: 12,
-  },
-  input: {
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 15,
-    color: '#1E293B',
-  },
-  chipRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  chip: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-    backgroundColor: '#F1F5F9',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  chipActive: {
-    backgroundColor: '#3B82F6',
-    borderColor: '#3B82F6',
-  },
-  chipText: {
-    fontSize: 14,
-    color: '#64748B',
-    fontWeight: '600',
-  },
-  chipTextActive: {
-    color: '#FFF',
-  },
-  buttonRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 24,
-  },
-  cancelButton: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: 10,
-    backgroundColor: '#F1F5F9',
-    alignItems: 'center',
-  },
-  cancelButtonText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#64748B',
-  },
-  saveButton: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: 10,
-    backgroundColor: '#3B82F6',
-    alignItems: 'center',
-  },
-  saveButtonText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#FFF',
-  },
-});
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F8FAFC' },
