@@ -1,5 +1,5 @@
 // Shared task edit modal used on Dashboard and Proposal screens
-// Includes web-native date picker for deadline input
+// Includes web-native datetime picker for deadline input
 import React, { useState } from 'react';
 import {
   View,
@@ -31,16 +31,35 @@ const webDateInputStyle: any = {
   fontFamily: 'inherit',
 };
 
+// Format a deadline string to datetime-local format (YYYY-MM-DDThh:mm)
+function toDatetimeLocal(deadline: string | null): string {
+  if (!deadline) return '';
+  const d = new Date(deadline);
+  if (isNaN(d.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+// Format to date-only (YYYY-MM-DD) for the date input
+function toDateOnly(deadline: string | null): string {
+  if (!deadline) return '';
+  const d = new Date(deadline);
+  if (isNaN(d.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 export function TaskEditModal({ task, onSave, onCancel }: Props) {
   const [name, setName] = useState(task.name);
   const [duration, setDuration] = useState(String(task.duration_minutes));
   const [priority, setPriority] = useState<Priority>(task.priority);
-  const [deadline, setDeadline] = useState(() => {
-    if (!task.deadline) return '';
+  const [deadlineDate, setDeadlineDate] = useState(() => toDateOnly(task.deadline));
+  const [deadlineTime, setDeadlineTime] = useState(() => {
+    if (!task.deadline) return '23:59';
     const d = new Date(task.deadline);
-    if (isNaN(d.getTime())) return '';
-    // YYYY-MM-DD format (works for both web date picker and text input)
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    if (isNaN(d.getTime())) return '23:59';
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
   });
   const [preferredTime, setPreferredTime] = useState<PreferredTime>(task.preferred_time);
 
@@ -55,22 +74,19 @@ export function TaskEditModal({ task, onSave, onCancel }: Props) {
   const handleSave = () => {
     const durationNum = parseInt(duration, 10);
     let parsedDeadline: string | null = null;
-    if (deadline.trim()) {
-      // Normalize separators to '-' and parse
-      const normalized = deadline.trim().replace(/[\\/年月]/g, '-').replace(/日/g, '');
-      const parts = normalized.split('-').filter(Boolean);
-      if (parts.length === 3) {
-        const iso = `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}T23:59:00`;
-        const d = new Date(iso);
-        if (!isNaN(d.getTime())) {
-          parsedDeadline = d.toISOString();
-        } else {
-          parsedDeadline = task.deadline;
-        }
+
+    if (deadlineDate.trim()) {
+      // Combine date + time
+      const timeStr = deadlineTime.trim() || '23:59';
+      const combined = `${deadlineDate.trim()}T${timeStr}:00`;
+      const d = new Date(combined);
+      if (!isNaN(d.getTime())) {
+        parsedDeadline = d.toISOString();
       } else {
-        parsedDeadline = task.deadline;
+        parsedDeadline = task.deadline; // fallback to original
       }
     }
+
     onSave({
       ...task,
       name,
@@ -121,26 +137,45 @@ export function TaskEditModal({ task, onSave, onCancel }: Props) {
               ))}
             </View>
 
-            {/* Deadline - web date picker or text input */}
-            <Text style={styles.label}>締切</Text>
+            {/* Deadline - date + time */}
+            <Text style={styles.label}>締切日</Text>
             {Platform.OS === 'web' ? (
               React.createElement('input', {
                 type: 'date',
-                value: deadline,
-                onChange: (e: any) => setDeadline(e.target.value),
+                value: deadlineDate,
+                onChange: (e: any) => setDeadlineDate(e.target.value),
                 style: webDateInputStyle,
               })
             ) : (
               <TextInput
                 style={styles.input}
-                value={deadline}
-                onChangeText={setDeadline}
+                value={deadlineDate}
+                onChangeText={setDeadlineDate}
                 placeholder="例: 2026-02-15（空欄で締切なし）"
                 placeholderTextColor="#94A3B8"
               />
             )}
-            {Platform.OS === 'web' && (
-              <TouchableOpacity onPress={() => setDeadline('')}>
+
+            <Text style={styles.label}>締切時刻</Text>
+            {Platform.OS === 'web' ? (
+              React.createElement('input', {
+                type: 'time',
+                value: deadlineTime,
+                onChange: (e: any) => setDeadlineTime(e.target.value),
+                style: webDateInputStyle,
+              })
+            ) : (
+              <TextInput
+                style={styles.input}
+                value={deadlineTime}
+                onChangeText={setDeadlineTime}
+                placeholder="例: 17:00（空欄で23:59）"
+                placeholderTextColor="#94A3B8"
+              />
+            )}
+
+            {Platform.OS === 'web' && deadlineDate && (
+              <TouchableOpacity onPress={() => { setDeadlineDate(''); setDeadlineTime('23:59'); }}>
                 <Text style={styles.clearDeadline}>締切をクリア</Text>
               </TouchableOpacity>
             )}

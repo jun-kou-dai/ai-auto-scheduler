@@ -90,8 +90,8 @@ export async function getBusySlots(
 export function calculateFreeSlots(
   busySlots: BusySlot[],
   daysAhead: number = 7,
-  workStartHour: number = 9,
-  workEndHour: number = 21
+  workStartHour: number = 6,
+  workEndHour: number = 23
 ): FreeSlot[] {
   const freeSlots: FreeSlot[] = [];
   const now = new Date();

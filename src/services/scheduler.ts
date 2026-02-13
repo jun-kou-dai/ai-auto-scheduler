@@ -1,6 +1,10 @@
-// Phase D3: Local deterministic scheduler (NOT AI)
-// Priority: 1) deadline近い 2) priority高 3) duration長
-import { Task, FreeSlot, Proposal, ProposalEvent, UnassignedTask } from '../types';
+// Phase D3: Local deterministic scheduler
+// Design: ALWAYS place every task. Never leave tasks unassigned.
+// Strategy:
+//   1. Try free slots (preferred time match first)
+//   2. If deadline blocks placement, place after deadline with warning
+//   3. If no free slots at all, force-place (allow double-booking) with warning
+import { Task, FreeSlot, Proposal, ProposalEvent } from '../types';
 
 const PRIORITY_WEIGHT: Record<string, number> = { '高': 3, '中': 2, '低': 1 };
 
@@ -11,7 +15,6 @@ function normalizeDeadline(deadline: string | null): Date | null {
   if (isNaN(d.getTime())) return null;
 
   // Date-only string like "2026-02-14" → JS parses as UTC midnight
-  // which makes the deadline effectively too early (9:00 AM JST).
   // Detect: no 'T' in the string → treat as end-of-day local time.
   if (!deadline.includes('T')) {
     const parts = deadline.split('-');
@@ -47,9 +50,9 @@ function sortTasks(tasks: Task[]): Task[] {
 
 function getPreferredHourRange(pref: Task['preferred_time']): [number, number] | null {
   switch (pref) {
-    case '午前': return [9, 12];
+    case '午前': return [6, 12];
     case '午後': return [12, 18];
-    case '夜': return [18, 21];
+    case '夜': return [18, 24];
     default: return null;
   }
 }
@@ -57,7 +60,6 @@ function getPreferredHourRange(pref: Task['preferred_time']): [number, number] |
 export function generateProposal(tasks: Task[], freeSlots: FreeSlot[]): Proposal {
   const sortedTasks = sortTasks(tasks);
   const events: ProposalEvent[] = [];
-  const unassigned: UnassignedTask[] = [];
 
   // Track remaining free slots (mutable copy)
   const remainingSlots = freeSlots.map((s) => ({
@@ -88,87 +90,130 @@ export function generateProposal(tasks: Task[], freeSlots: FreeSlot[]): Proposal
       })
       .sort((a, b) => b.score - a.score);
 
+    // === Pass 1: Try to fit within deadline in free slots ===
     for (const { slot, idx } of scoredSlots) {
       if (slot.durationMinutes >= needed) {
-        // Check deadline constraint
         const proposedEnd = new Date(slot.start.getTime() + needed * 60000);
         if (deadlineDate && proposedEnd > deadlineDate) {
-          continue; // Would exceed deadline
+          continue; // Would exceed deadline, try next
         }
-
-        const eventStart = slot.start.toISOString();
-        const eventEnd = proposedEnd.toISOString();
 
         events.push({
           taskId: task.id,
           title: task.name,
-          start: eventStart,
-          end: eventEnd,
+          start: slot.start.toISOString(),
+          end: proposedEnd.toISOString(),
         });
 
-        // Shrink the slot
-        remainingSlots[idx] = {
-          start: proposedEnd,
-          end: slot.end,
-          durationMinutes: (slot.end.getTime() - proposedEnd.getTime()) / 60000,
-        };
-
-        // Remove slot if too small
-        if (remainingSlots[idx].durationMinutes < 15) {
-          remainingSlots.splice(idx, 1);
-        }
-
+        shrinkSlot(remainingSlots, idx, proposedEnd);
         placed = true;
         break;
       }
     }
 
-    // Fallback: if deadline prevented placement, retry ignoring deadline
-    if (!placed && deadlineDate) {
+    // === Pass 2: Ignore deadline, still use free slots ===
+    if (!placed) {
       for (const { slot, idx } of scoredSlots) {
         if (slot.durationMinutes >= needed) {
           const proposedEnd = new Date(slot.start.getTime() + needed * 60000);
-          const eventStart = slot.start.toISOString();
-          const eventEnd = proposedEnd.toISOString();
+          const warning = deadlineDate
+            ? `締切（${deadlineDate.toLocaleDateString('ja-JP')}）を過ぎますが、最短の空き枠に配置しました`
+            : undefined;
 
-          const deadlineLabel = deadlineDate.toLocaleDateString('ja-JP');
           events.push({
             taskId: task.id,
             title: task.name,
-            start: eventStart,
-            end: eventEnd,
-            warning: `締切（${deadlineLabel}）を過ぎていますが、最短の空き枠に配置しました`,
+            start: slot.start.toISOString(),
+            end: proposedEnd.toISOString(),
+            warning,
           });
 
-          remainingSlots[idx] = {
-            start: proposedEnd,
-            end: slot.end,
-            durationMinutes: (slot.end.getTime() - proposedEnd.getTime()) / 60000,
-          };
-          if (remainingSlots[idx].durationMinutes < 15) {
-            remainingSlots.splice(idx, 1);
-          }
-
+          shrinkSlot(remainingSlots, idx, proposedEnd);
           placed = true;
           break;
         }
       }
     }
 
+    // === Pass 3: Force-place (double-booking allowed) ===
     if (!placed) {
-      // Determine reason
-      let reason: string;
-      const totalFree = remainingSlots.reduce((sum, s) => sum + s.durationMinutes, 0);
-
-      if (totalFree < needed) {
-        reason = `空き時間が不足（必要: ${needed}分、残り: ${Math.round(totalFree)}分）。来週の配置を検討してください。`;
-      } else {
-        reason = `${needed}分以上の連続空き枠が見つかりません。タスクの分割を検討してください。`;
+      const forceSlot = findForcePlacementSlot(task, deadlineDate);
+      const warnings: string[] = [];
+      warnings.push('空き枠が不足のため、既存予定と重複する可能性があります');
+      if (deadlineDate && forceSlot.end > deadlineDate) {
+        warnings.push(`締切（${deadlineDate.toLocaleDateString('ja-JP')}）を過ぎています`);
       }
 
-      unassigned.push({ taskId: task.id, reason });
+      events.push({
+        taskId: task.id,
+        title: task.name,
+        start: forceSlot.start.toISOString(),
+        end: forceSlot.end.toISOString(),
+        warning: warnings.join('。'),
+      });
+      placed = true;
     }
   }
 
-  return { events, unassigned };
+  // No more unassigned - all tasks are always placed
+  return { events, unassigned: [] };
+}
+
+// Shrink a slot after placing a task in it
+function shrinkSlot(
+  slots: { start: Date; end: Date; durationMinutes: number }[],
+  idx: number,
+  newStart: Date
+) {
+  const slot = slots[idx];
+  const remaining = (slot.end.getTime() - newStart.getTime()) / 60000;
+  if (remaining < 15) {
+    slots.splice(idx, 1);
+  } else {
+    slots[idx] = {
+      start: newStart,
+      end: slot.end,
+      durationMinutes: remaining,
+    };
+  }
+}
+
+// Find a forced placement slot when no free slots are available
+function findForcePlacementSlot(
+  task: Task,
+  deadlineDate: Date | null
+): { start: Date; end: Date } {
+  const now = new Date();
+  const needed = task.duration_minutes;
+  const prefRange = getPreferredHourRange(task.preferred_time);
+
+  // Try to place starting tomorrow at preferred time, or 9:00 as default
+  let startHour = 9;
+  if (prefRange) {
+    startHour = prefRange[0];
+  }
+
+  // Start from tomorrow
+  const baseDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, startHour, 0, 0);
+
+  // If deadline is in the future and we can fit before it, try
+  if (deadlineDate && deadlineDate > now) {
+    const tryStart = new Date(deadlineDate.getTime() - needed * 60000);
+    if (tryStart > now) {
+      // Place just before deadline
+      const hour = tryStart.getHours();
+      // Ensure it's a reasonable hour (6-23)
+      if (hour >= 6 && hour <= 23) {
+        return {
+          start: tryStart,
+          end: deadlineDate,
+        };
+      }
+    }
+  }
+
+  return {
+    start: baseDate,
+    end: new Date(baseDate.getTime() + needed * 60000),
+  };
 }
