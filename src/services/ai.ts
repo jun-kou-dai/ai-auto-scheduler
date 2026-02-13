@@ -17,15 +17,15 @@ interface AITaskResult {
 // Build prompt dynamically so date is always current (BUG 14 fix)
 function buildSystemPrompt(): string {
   const now = new Date();
-  const todayISO = now.toISOString().split('T')[0];
-  const tomorrow = new Date(now);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const tomorrowISO = tomorrow.toISOString().split('T')[0];
+  // Use local date components (not UTC) so dates match the user's timezone
+  const pad2 = (n: number) => String(n).padStart(2, '0');
+  const todayISO = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
+  const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+  const tomorrowISO = `${tomorrow.getFullYear()}-${pad2(tomorrow.getMonth() + 1)}-${pad2(tomorrow.getDate())}`;
   const dayOfWeek = now.getDay(); // 0=日, 1=月, ..., 6=土
   const daysUntilMonday = dayOfWeek === 0 ? 1 : (8 - dayOfWeek);
-  const nextMonday = new Date(now);
-  nextMonday.setDate(nextMonday.getDate() + daysUntilMonday);
-  const nextMondayISO = nextMonday.toISOString().split('T')[0];
+  const nextMonday = new Date(now.getFullYear(), now.getMonth(), now.getDate() + daysUntilMonday);
+  const nextMondayISO = `${nextMonday.getFullYear()}-${pad2(nextMonday.getMonth() + 1)}-${pad2(nextMonday.getDate())}`;
 
   return `あなたはタスク分析AIです。ユーザーが入力した複数のタスクを構造化してください。
 音声入力が主な入力方法のため、話し言葉やカジュアルな表現に対応してください。
