@@ -16,7 +16,19 @@ interface AITaskResult {
 
 // Build prompt dynamically so date is always current (BUG 14 fix)
 function buildSystemPrompt(): string {
+  const now = new Date();
+  const todayISO = now.toISOString().split('T')[0];
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowISO = tomorrow.toISOString().split('T')[0];
+  const dayOfWeek = now.getDay(); // 0=日, 1=月, ..., 6=土
+  const daysUntilMonday = dayOfWeek === 0 ? 1 : (8 - dayOfWeek);
+  const nextMonday = new Date(now);
+  nextMonday.setDate(nextMonday.getDate() + daysUntilMonday);
+  const nextMondayISO = nextMonday.toISOString().split('T')[0];
+
   return `あなたはタスク分析AIです。ユーザーが入力した複数のタスクを構造化してください。
+音声入力が主な入力方法のため、話し言葉やカジュアルな表現に対応してください。
 
 必ず以下のJSON配列だけを返してください。余計な文章・マークダウン・説明は一切禁止です。
 
@@ -24,27 +36,58 @@ function buildSystemPrompt(): string {
 
 各タスクの形式:
 {
-  "name": "タスク名（簡潔に）",
+  "name": "タスク名",
   "duration_minutes": 所要時間（分、数値）,
-  "deadline": "締切日（ISO 8601形式、例: 2025-01-15T17:00:00）またはnull",
+  "deadline": "締切日時（ISO 8601形式）またはnull",
   "priority": "高" or "中" or "低",
   "preferred_time": "午前" or "午後" or "夜" or null,
   "reasoning": "この推定の根拠（1-2文で簡潔に）"
 }
 
-推定ルール:
-- 明示的に時間が書かれていない場合、タスクの性質から妥当な所要時間を推定（デフォルト60分）
-- 「急ぎ」「至急」「今日中」→ priority: "高", deadline: 今日
-- 「来週まで」→ deadline: 来週の月曜日
-- 「朝やりたい」→ preferred_time: "午前"
-- 不明な場合は priority: "中", deadline: null
+=== タスク名のルール（最重要） ===
+- ユーザーが言った言葉をそのまま使うこと。言い換え・意訳・類語への変更は禁止。
+- 例: 「バイブコーディング」→ name: "バイブコーディング"（「バイブレーション」に変えない）
+- 例: 「ミーティング」→ name: "ミーティング"（「会議」に変えない）
+- 固有名詞・専門用語・カタカナ語はそのまま保持すること
+- 音声認識の誤変換が明らかな場合のみ、最小限の修正を許可（例: 「ばいぶこーでぃんぐ」→「バイブコーディング」）
+
+=== 日時の解析ルール（重要） ===
+今日の日付: ${todayISO}
+明日の日付: ${tomorrowISO}
+来週月曜日: ${nextMondayISO}
+
+日付の変換:
+- 「今日」「今日中」→ deadline: "${todayISO}T17:00:00"
+- 「明日」「明日まで」→ deadline: "${tomorrowISO}T17:00:00"
+- 「来週」「来週まで」→ deadline: "${nextMondayISO}T17:00:00"
+- 「金曜まで」「金曜日まで」→ その週の金曜日を計算してdeadlineに設定
+
+時刻の変換（具体的な時刻が指定された場合）:
+- 「今日の15時」「今日15時」→ deadline: "${todayISO}T15:00:00"
+- 「明日の10時」「明日10時」→ deadline: "${tomorrowISO}T10:00:00"
+- 「9時」「9時まで」→ deadline: "${todayISO}T09:00:00"
+- 「午後3時」→ deadline: 当日または翌日のT15:00:00
+- 「夕方6時」→ deadline: 当日のT18:00:00
+
+時間帯の変換:
+- 「朝」「午前中」「朝やりたい」→ preferred_time: "午前"
+- 「昼」「午後」「昼にやる」→ preferred_time: "午後"
+- 「夜」「夜にやる」「夕方以降」→ preferred_time: "夜"
+
+優先度の変換:
+- 「急ぎ」「至急」「今日中」「すぐ」→ priority: "高"
+- 「できれば」「そのうち」「暇な時」→ priority: "低"
+- 不明な場合は priority: "中"
+
+=== 所要時間の推定ルール ===
+- 明示的に時間が指定された場合はそれを使う（例:「2時間」→120, 「30分」→30）
+- 「30分くらい」「1時間ほど」などの表現も正確に読み取る
+- 明示されていない場合、タスクの性質から推定（デフォルト60分）
 
 reasoning記載ルール:
-- 所要時間をなぜその値にしたか（例：「記事作成は構成・執筆・校正を含むため120分」）
-- 優先度の判断理由（例：「締切が今日のため高優先」）
-- 入力に時間や期限のヒントがあればそれを引用
-
-今日の日付: ${new Date().toISOString().split('T')[0]}`;
+- 所要時間をなぜその値にしたか
+- 優先度の判断理由
+- 入力に時間や期限のヒントがあればそれを引用`;
 }
 
 // Parse AI response, extracting JSON from possible markdown fencing

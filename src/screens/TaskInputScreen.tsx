@@ -24,6 +24,7 @@ export function TaskInputScreen({ onNavigate, onTasksAnalyzed }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isListening, setIsListening] = useState(false);
+  const isListeningRef = useRef(false);
   const recognitionRef = useRef<any>(null);
 
   const exampleTasks = `レポートの下書きを作る（2時間、金曜まで）
@@ -69,36 +70,61 @@ export function TaskInputScreen({ onNavigate, onTasksAnalyzed }: Props) {
     const recognition = new SpeechRecognition();
     recognition.lang = 'ja-JP';
     recognition.interimResults = false;
-    recognition.continuous = false;
+    recognition.continuous = true;
 
     recognition.onresult = (event: any) => {
-      const transcript = event.results[0][0].transcript;
-      setInput((prev) => prev ? prev + '\n' + transcript : transcript);
-      setIsListening(false);
+      // continuous mode: process only new results
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        if (event.results[i].isFinal) {
+          const transcript = event.results[i][0].transcript.trim();
+          if (transcript) {
+            setInput((prev) => prev ? prev + '\n' + transcript : transcript);
+          }
+        }
+      }
     };
 
     recognition.onerror = (event: any) => {
       if (event.error === 'not-allowed') {
         setError('マイクへのアクセスが許可されていません。ブラウザの設定を確認してください。');
+        isListeningRef.current = false;
+        setIsListening(false);
+      } else if (event.error === 'no-speech') {
+        // no-speech is common in continuous mode, just restart
       } else if (event.error !== 'aborted') {
         setError('音声認識エラー: ' + event.error);
+        isListeningRef.current = false;
+        setIsListening(false);
       }
-      setIsListening(false);
     };
 
     recognition.onend = () => {
-      setIsListening(false);
+      // In continuous mode, auto-restart if still supposed to be listening
+      if (recognitionRef.current && isListeningRef.current) {
+        try {
+          recognition.start();
+        } catch {
+          isListeningRef.current = false;
+          setIsListening(false);
+        }
+      } else {
+        isListeningRef.current = false;
+        setIsListening(false);
+      }
     };
 
     recognitionRef.current = recognition;
     recognition.start();
+    isListeningRef.current = true;
     setIsListening(true);
     setError(null);
   };
 
   const stopVoiceInput = () => {
+    isListeningRef.current = false;
     if (recognitionRef.current) {
       recognitionRef.current.stop();
+      recognitionRef.current = null;
     }
     setIsListening(false);
   };
@@ -165,7 +191,8 @@ export function TaskInputScreen({ onNavigate, onTasksAnalyzed }: Props) {
 
         {isListening && (
           <View style={styles.listeningBox}>
-            <Text style={styles.listeningText}>🎙 聞いています... 話してください</Text>
+            <Text style={styles.listeningText}>🎙 聞いています... タスクを1つずつ話してください</Text>
+            <Text style={styles.listeningHint}>例:「明日の15時までにレポート作成」「バイブコーディング30分」</Text>
           </View>
         )}
 
@@ -300,6 +327,11 @@ const styles = StyleSheet.create({
     color: '#DC2626',
     fontSize: 14,
     fontWeight: '600',
+  },
+  listeningHint: {
+    color: '#9CA3AF',
+    fontSize: 12,
+    marginTop: 4,
   },
   errorBox: {
     backgroundColor: '#FEF2F2',
