@@ -13,6 +13,7 @@ export interface Task {
   priority: Priority;
   preferred_time: PreferredTime;
   status: TaskStatus;
+  reasoning: string; // AI's reasoning for the estimates
 }
 
 export interface ProposalEvent {

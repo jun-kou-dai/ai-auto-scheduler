@@ -9,17 +9,20 @@ import {
   ActivityIndicator,
   RefreshControl,
   Image,
+  TextInput,
+  Modal,
 } from 'react-native';
 import { useAuth } from '../contexts/AuthContext';
 import { getUpcomingEvents } from '../services/calendar';
-import { CalendarEvent, Screen, Task } from '../types';
+import { CalendarEvent, Screen, Task, Priority, PreferredTime } from '../types';
 
 interface Props {
   onNavigate: (screen: Screen) => void;
   tasks: Task[];
+  onTasksUpdated: (tasks: Task[]) => void;
 }
 
-export function DashboardScreen({ onNavigate, tasks }: Props) {
+export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
   const { user, accessToken, logout } = useAuth();
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -66,6 +69,18 @@ export function DashboardScreen({ onNavigate, tasks }: Props) {
   });
 
   const unassignedTasks = tasks.filter((t) => t.status === 'unassigned');
+  const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
+
+  const toggleExpand = (taskId: string) => {
+    setExpandedTaskId((prev) => (prev === taskId ? null : taskId));
+  };
+
+  const handleSaveEdit = (updated: Task) => {
+    const newTasks = tasks.map((t) => (t.id === updated.id ? updated : t));
+    onTasksUpdated(newTasks);
+    setEditingTask(null);
+  };
 
   return (
     <View style={styles.container}>
@@ -154,19 +169,89 @@ export function DashboardScreen({ onNavigate, tasks }: Props) {
                 <Text style={styles.sectionTitle}>
                   未配置タスク ({unassignedTasks.length})
                 </Text>
-                {unassignedTasks.map((t) => (
-                  <View key={t.id} style={styles.taskCard}>
-                    <View style={styles.taskHeader}>
-                      <Text style={styles.taskName}>{t.name}</Text>
-                      <PriorityBadge priority={t.priority} />
-                    </View>
-                    <Text style={styles.taskDetail}>
-                      {t.duration_minutes}分
-                      {t.deadline ? ` | 締切: ${new Date(t.deadline).toLocaleDateString('ja-JP')}` : ''}
-                    </Text>
-                  </View>
-                ))}
+                <Text style={styles.sectionHint}>タップして詳細を表示</Text>
+                {unassignedTasks.map((t) => {
+                  const isExpanded = expandedTaskId === t.id;
+                  return (
+                    <TouchableOpacity
+                      key={t.id}
+                      style={[styles.taskCard, isExpanded && styles.taskCardExpanded]}
+                      onPress={() => toggleExpand(t.id)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.taskHeader}>
+                        <Text style={styles.taskName}>{t.name}</Text>
+                        <View style={styles.taskHeaderRight}>
+                          <PriorityBadge priority={t.priority} />
+                          <Text style={styles.expandArrow}>{isExpanded ? '▲' : '▼'}</Text>
+                        </View>
+                      </View>
+                      <Text style={styles.taskDetail}>
+                        {t.duration_minutes}分
+                        {t.deadline ? ` | 締切: ${new Date(t.deadline).toLocaleDateString('ja-JP')}` : ''}
+                        {t.preferred_time ? ` | ${t.preferred_time}希望` : ''}
+                      </Text>
+
+                      {isExpanded && (
+                        <View style={styles.taskExpanded}>
+                          {/* Original input */}
+                          <View style={styles.detailRow}>
+                            <Text style={styles.detailLabel}>元の入力:</Text>
+                            <Text style={styles.detailValue}>「{t.raw}」</Text>
+                          </View>
+
+                          {/* AI reasoning */}
+                          {t.reasoning ? (
+                            <View style={styles.reasoningBox}>
+                              <Text style={styles.reasoningLabel}>AI推定の根拠:</Text>
+                              <Text style={styles.reasoningText}>{t.reasoning}</Text>
+                            </View>
+                          ) : null}
+
+                          {/* All details */}
+                          <View style={styles.detailGrid}>
+                            <View style={styles.detailItem}>
+                              <Text style={styles.detailLabel}>所要時間</Text>
+                              <Text style={styles.detailValue}>{t.duration_minutes}分</Text>
+                            </View>
+                            <View style={styles.detailItem}>
+                              <Text style={styles.detailLabel}>優先度</Text>
+                              <Text style={styles.detailValue}>{t.priority}</Text>
+                            </View>
+                            <View style={styles.detailItem}>
+                              <Text style={styles.detailLabel}>締切</Text>
+                              <Text style={styles.detailValue}>
+                                {t.deadline ? new Date(t.deadline).toLocaleDateString('ja-JP') : 'なし'}
+                              </Text>
+                            </View>
+                            <View style={styles.detailItem}>
+                              <Text style={styles.detailLabel}>希望時間帯</Text>
+                              <Text style={styles.detailValue}>{t.preferred_time || 'なし'}</Text>
+                            </View>
+                          </View>
+
+                          {/* Edit button */}
+                          <TouchableOpacity
+                            style={styles.editButton}
+                            onPress={() => setEditingTask({ ...t })}
+                          >
+                            <Text style={styles.editButtonText}>編集する</Text>
+                          </TouchableOpacity>
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
+            )}
+
+            {/* Edit Modal */}
+            {editingTask && (
+              <TaskEditModal
+                task={editingTask}
+                onSave={handleSaveEdit}
+                onCancel={() => setEditingTask(null)}
+              />
             )}
           </>
         )}
@@ -213,6 +298,242 @@ function PriorityBadge({ priority }: { priority: string }) {
     </View>
   );
 }
+
+function TaskEditModal({
+  task,
+  onSave,
+  onCancel,
+}: {
+  task: Task;
+  onSave: (t: Task) => void;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState(task.name);
+  const [duration, setDuration] = useState(String(task.duration_minutes));
+  const [priority, setPriority] = useState<Priority>(task.priority);
+  const [deadline, setDeadline] = useState(
+    task.deadline ? new Date(task.deadline).toLocaleDateString('ja-JP') : ''
+  );
+  const [preferredTime, setPreferredTime] = useState<PreferredTime>(task.preferred_time);
+
+  const priorities: Priority[] = ['高', '中', '低'];
+  const timeSlots: { label: string; value: PreferredTime }[] = [
+    { label: '指定なし', value: null },
+    { label: '午前', value: '午前' },
+    { label: '午後', value: '午後' },
+    { label: '夜', value: '夜' },
+  ];
+
+  const handleSave = () => {
+    const durationNum = parseInt(duration, 10);
+    // Parse deadline: support YYYY/MM/DD, YYYY-MM-DD, or Japanese format
+    let parsedDeadline: string | null = null;
+    if (deadline.trim()) {
+      const d = new Date(deadline.replace(/\//g, '-').replace(/年|月/g, '-').replace(/日/g, ''));
+      if (!isNaN(d.getTime())) {
+        parsedDeadline = d.toISOString();
+      } else {
+        parsedDeadline = task.deadline; // keep original if parse fails
+      }
+    }
+    onSave({
+      ...task,
+      name,
+      duration_minutes: isNaN(durationNum) || durationNum <= 0 ? task.duration_minutes : durationNum,
+      priority,
+      deadline: parsedDeadline,
+      preferred_time: preferredTime,
+    });
+  };
+
+  return (
+    <Modal transparent animationType="slide" onRequestClose={onCancel}>
+      <View style={modalStyles.overlay}>
+        <View style={modalStyles.container}>
+          <Text style={modalStyles.title}>タスクを編集</Text>
+
+          {/* Name */}
+          <Text style={modalStyles.label}>タスク名</Text>
+          <TextInput
+            style={modalStyles.input}
+            value={name}
+            onChangeText={setName}
+          />
+
+          {/* Duration */}
+          <Text style={modalStyles.label}>所要時間（分）</Text>
+          <TextInput
+            style={modalStyles.input}
+            value={duration}
+            onChangeText={setDuration}
+            keyboardType="number-pad"
+          />
+
+          {/* Priority */}
+          <Text style={modalStyles.label}>優先度</Text>
+          <View style={modalStyles.chipRow}>
+            {priorities.map((p) => (
+              <TouchableOpacity
+                key={p}
+                style={[
+                  modalStyles.chip,
+                  priority === p && modalStyles.chipActive,
+                ]}
+                onPress={() => setPriority(p)}
+              >
+                <Text
+                  style={[
+                    modalStyles.chipText,
+                    priority === p && modalStyles.chipTextActive,
+                  ]}
+                >
+                  {p}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* Deadline */}
+          <Text style={modalStyles.label}>締切（YYYY/MM/DD）</Text>
+          <TextInput
+            style={modalStyles.input}
+            value={deadline}
+            onChangeText={setDeadline}
+            placeholder="例: 2026/02/15（空欄で締切なし）"
+            placeholderTextColor="#94A3B8"
+          />
+
+          {/* Preferred time */}
+          <Text style={modalStyles.label}>希望時間帯</Text>
+          <View style={modalStyles.chipRow}>
+            {timeSlots.map((slot) => (
+              <TouchableOpacity
+                key={slot.label}
+                style={[
+                  modalStyles.chip,
+                  preferredTime === slot.value && modalStyles.chipActive,
+                ]}
+                onPress={() => setPreferredTime(slot.value)}
+              >
+                <Text
+                  style={[
+                    modalStyles.chipText,
+                    preferredTime === slot.value && modalStyles.chipTextActive,
+                  ]}
+                >
+                  {slot.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* Buttons */}
+          <View style={modalStyles.buttonRow}>
+            <TouchableOpacity style={modalStyles.cancelButton} onPress={onCancel}>
+              <Text style={modalStyles.cancelButtonText}>キャンセル</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={modalStyles.saveButton} onPress={handleSave}>
+              <Text style={modalStyles.saveButtonText}>保存</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const modalStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  container: {
+    backgroundColor: '#FFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 24,
+    paddingBottom: 40,
+    maxHeight: '85%',
+  },
+  title: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1E293B',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  label: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#64748B',
+    marginBottom: 6,
+    marginTop: 12,
+  },
+  input: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 15,
+    color: '#1E293B',
+  },
+  chipRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  chip: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  chipActive: {
+    backgroundColor: '#3B82F6',
+    borderColor: '#3B82F6',
+  },
+  chipText: {
+    fontSize: 14,
+    color: '#64748B',
+    fontWeight: '600',
+  },
+  chipTextActive: {
+    color: '#FFF',
+  },
+  buttonRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 24,
+  },
+  cancelButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 10,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+  },
+  cancelButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  saveButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 10,
+    backgroundColor: '#3B82F6',
+    alignItems: 'center',
+  },
+  saveButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFF',
+  },
+});
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F8FAFC' },
@@ -299,6 +620,12 @@ const styles = StyleSheet.create({
   eventTimeText: { fontSize: 13, color: '#3B82F6', fontWeight: '600' },
   eventTimeSep: { fontSize: 10, color: '#94A3B8' },
   eventTitle: { fontSize: 14, color: '#1E293B', flex: 1 },
+  sectionHint: {
+    fontSize: 12,
+    color: '#94A3B8',
+    marginBottom: 8,
+    marginTop: -8,
+  },
   taskCard: {
     backgroundColor: '#FFF',
     padding: 14,
@@ -307,14 +634,91 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
     marginBottom: 8,
   },
+  taskCardExpanded: {
+    borderColor: '#3B82F6',
+    borderWidth: 1.5,
+  },
   taskHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 4,
   },
+  taskHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  expandArrow: {
+    fontSize: 10,
+    color: '#94A3B8',
+  },
   taskName: { fontSize: 14, fontWeight: '600', color: '#1E293B', flex: 1 },
   taskDetail: { fontSize: 12, color: '#64748B' },
+  taskExpanded: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+  },
+  detailRow: {
+    marginBottom: 8,
+  },
+  detailLabel: {
+    fontSize: 11,
+    color: '#94A3B8',
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  detailValue: {
+    fontSize: 13,
+    color: '#1E293B',
+  },
+  reasoningBox: {
+    backgroundColor: '#EFF6FF',
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 12,
+    borderLeftWidth: 3,
+    borderLeftColor: '#3B82F6',
+  },
+  reasoningLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#3B82F6',
+    marginBottom: 4,
+  },
+  reasoningText: {
+    fontSize: 13,
+    color: '#1E40AF',
+    lineHeight: 20,
+  },
+  detailGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 12,
+  },
+  detailItem: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    padding: 8,
+    minWidth: '45%',
+    flex: 1,
+  },
+  editButton: {
+    backgroundColor: '#F1F5F9',
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  editButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#3B82F6',
+  },
   badge: {
     paddingHorizontal: 8,
     paddingVertical: 2,

@@ -174,7 +174,15 @@ export function ProposalScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
                       </Text>
                       <Text style={styles.proposalDuration}>
                         {task ? `${task.duration_minutes}分` : ''}
+                        {task?.preferred_time ? ` | ${task.preferred_time}希望` : ''}
+                        {task?.deadline ? ` | 締切: ${new Date(task.deadline).toLocaleDateString('ja-JP')}` : ''}
                       </Text>
+                      {task?.reasoning ? (
+                        <View style={styles.reasoningBox}>
+                          <Text style={styles.reasoningLabel}>AI根拠:</Text>
+                          <Text style={styles.reasoningText}>{task.reasoning}</Text>
+                        </View>
+                      ) : null}
                     </View>
                   );
                 })}
@@ -317,6 +325,25 @@ const styles = StyleSheet.create({
   proposalTitle: { fontSize: 15, fontWeight: '600', color: '#1E293B', flex: 1 },
   proposalTime: { fontSize: 13, color: '#3B82F6', fontWeight: '600', marginBottom: 2 },
   proposalDuration: { fontSize: 12, color: '#64748B' },
+  reasoningBox: {
+    backgroundColor: '#EFF6FF',
+    borderRadius: 6,
+    padding: 8,
+    marginTop: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: '#3B82F6',
+  },
+  reasoningLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#3B82F6',
+    marginBottom: 2,
+  },
+  reasoningText: {
+    fontSize: 12,
+    color: '#1E40AF',
+    lineHeight: 18,
+  },
   unassignedCard: {
     backgroundColor: '#FFFBEB',
     borderRadius: 12,

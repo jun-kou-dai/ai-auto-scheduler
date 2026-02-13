@@ -11,6 +11,7 @@ interface AITaskResult {
   deadline: string | null;
   priority: '高' | '中' | '低';
   preferred_time: '午前' | '午後' | '夜' | null;
+  reasoning: string;
 }
 
 // Build prompt dynamically so date is always current (BUG 14 fix)
@@ -27,7 +28,8 @@ function buildSystemPrompt(): string {
   "duration_minutes": 所要時間（分、数値）,
   "deadline": "締切日（ISO 8601形式、例: 2025-01-15T17:00:00）またはnull",
   "priority": "高" or "中" or "低",
-  "preferred_time": "午前" or "午後" or "夜" or null
+  "preferred_time": "午前" or "午後" or "夜" or null,
+  "reasoning": "この推定の根拠（1-2文で簡潔に）"
 }
 
 推定ルール:
@@ -36,6 +38,11 @@ function buildSystemPrompt(): string {
 - 「来週まで」→ deadline: 来週の月曜日
 - 「朝やりたい」→ preferred_time: "午前"
 - 不明な場合は priority: "中", deadline: null
+
+reasoning記載ルール:
+- 所要時間をなぜその値にしたか（例：「記事作成は構成・執筆・校正を含むため120分」）
+- 優先度の判断理由（例：「締切が今日のため高優先」）
+- 入力に時間や期限のヒントがあればそれを引用
 
 今日の日付: ${new Date().toISOString().split('T')[0]}`;
 }
@@ -96,6 +103,7 @@ function validateTaskResult(item: any): AITaskResult {
       item.preferred_time === '夜'
         ? item.preferred_time
         : null,
+    reasoning: typeof item.reasoning === 'string' ? item.reasoning : '',
   };
 }
 
@@ -230,5 +238,6 @@ export async function analyzeTasks(rawInput: string): Promise<Task[]> {
     priority: result.priority,
     preferred_time: result.preferred_time,
     status: 'unassigned',
+    reasoning: result.reasoning,
   }));
 }

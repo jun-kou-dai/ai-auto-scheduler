@@ -65,6 +65,7 @@ function AppRouter() {
         <DashboardScreen
           onNavigate={handleNavigate}
           tasks={tasks}
+          onTasksUpdated={handleTasksUpdated}
         />
       );
     case 'taskInput':
