@@ -15,6 +15,7 @@ import { getUpcomingEvents, updateCalendarEvent, deleteCalendarEvent, CalendarAp
 import { CalendarEvent, Screen, Task } from '../types';
 import { TaskEditModal } from '../components/TaskEditModal';
 import { CalendarEventEditModal } from '../components/CalendarEventEditModal';
+import { nowJST, jstToDate } from '../utils/timezone';
 
 interface Props {
   onNavigate: (screen: Screen) => void;
@@ -64,20 +65,24 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
     fetchEvents();
   };
 
-  const today = new Date();
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
+  const jst = nowJST();
+  const today = jstToDate(jst.year, jst.month, jst.day);
+  const tomorrow = jstToDate(jst.year, jst.month, jst.day + 1);
 
-  const todayStr = today.toLocaleDateString('ja-JP', { month: 'long', day: 'numeric', weekday: 'short' });
-  const tomorrowStr = tomorrow.toLocaleDateString('ja-JP', { month: 'long', day: 'numeric', weekday: 'short' });
+  const todayStr = today.toLocaleDateString('ja-JP', { month: 'long', day: 'numeric', weekday: 'short', timeZone: 'Asia/Tokyo' });
+  const tomorrowStr = tomorrow.toLocaleDateString('ja-JP', { month: 'long', day: 'numeric', weekday: 'short', timeZone: 'Asia/Tokyo' });
+
+  const todayStart = today.getTime();
+  const tomorrowStart = tomorrow.getTime();
+  const dayAfterStart = jstToDate(jst.year, jst.month, jst.day + 2).getTime();
 
   const todayEvents = events.filter((e) => {
-    const d = new Date(e.start.dateTime || e.start.date || '');
-    return d.toDateString() === today.toDateString();
+    const t = new Date(e.start.dateTime || e.start.date || '').getTime();
+    return t >= todayStart && t < tomorrowStart;
   });
   const tomorrowEvents = events.filter((e) => {
-    const d = new Date(e.start.dateTime || e.start.date || '');
-    return d.toDateString() === tomorrow.toDateString();
+    const t = new Date(e.start.dateTime || e.start.date || '').getTime();
+    return t >= tomorrowStart && t < dayAfterStart;
   });
 
   // Calendar event edit handlers

@@ -1,5 +1,6 @@
 // Phase C: Google Calendar API service
 import { CalendarEvent, BusySlot, FreeSlot } from '../types';
+import { nowJST, jstToDate } from '../utils/timezone';
 
 const CALENDAR_API = 'https://www.googleapis.com/calendar/v3';
 
@@ -18,10 +19,9 @@ export async function getUpcomingEvents(
   accessToken: string,
   daysAhead: number = 2
 ): Promise<CalendarEvent[]> {
-  const now = new Date();
-  const timeMin = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
-  const timeMax = new Date(timeMin);
-  timeMax.setDate(timeMax.getDate() + daysAhead);
+  const jst = nowJST();
+  const timeMin = jst.startOfDay; // midnight JST today
+  const timeMax = jstToDate(jst.year, jst.month, jst.day + daysAhead);
 
   const params = new URLSearchParams({
     timeMin: timeMin.toISOString(),
@@ -55,10 +55,9 @@ export async function getBusySlots(
   accessToken: string,
   daysAhead: number = 7
 ): Promise<BusySlot[]> {
-  const now = new Date();
-  const timeMin = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
-  const timeMax = new Date(timeMin);
-  timeMax.setDate(timeMax.getDate() + daysAhead);
+  const jst = nowJST();
+  const timeMin = jst.startOfDay;
+  const timeMax = jstToDate(jst.year, jst.month, jst.day + daysAhead);
 
   const res = await fetch(`${CALENDAR_API}/freeBusy`, {
     method: 'POST',
@@ -95,10 +94,11 @@ export function calculateFreeSlots(
 ): FreeSlot[] {
   const freeSlots: FreeSlot[] = [];
   const now = new Date();
+  const jst = nowJST();
 
   for (let d = 0; d < daysAhead; d++) {
-    const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() + d, workStartHour, 0, 0);
-    const dayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + d, workEndHour, 0, 0);
+    const dayStart = jstToDate(jst.year, jst.month, jst.day + d, workStartHour);
+    const dayEnd = jstToDate(jst.year, jst.month, jst.day + d, workEndHour);
 
     // Skip past times for today
     const effectiveStart = d === 0 && now > dayStart ? new Date(Math.ceil(now.getTime() / (30 * 60000)) * (30 * 60000)) : dayStart;

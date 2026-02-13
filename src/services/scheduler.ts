@@ -5,24 +5,24 @@
 //   2. If deadline blocks placement, place after deadline with warning
 //   3. If no free slots at all, force-place (allow double-booking) with warning
 import { Task, FreeSlot, Proposal, ProposalEvent } from '../types';
+import { parseAsJST, jstToDate, nowJST } from '../utils/timezone';
 
 const PRIORITY_WEIGHT: Record<string, number> = { '高': 3, '中': 2, '低': 1 };
 
-// Normalize deadline: date-only strings → end of that day (23:59 local time)
+// Normalize deadline: parse as JST, date-only strings → end of that day (23:59 JST)
 function normalizeDeadline(deadline: string | null): Date | null {
   if (!deadline) return null;
-  const d = new Date(deadline);
-  if (isNaN(d.getTime())) return null;
 
-  // Date-only string like "2026-02-14" → JS parses as UTC midnight
-  // Detect: no 'T' in the string → treat as end-of-day local time.
+  // Date-only string like "2026-02-14" → 23:59 JST
   if (!deadline.includes('T')) {
     const parts = deadline.split('-');
     if (parts.length === 3) {
-      return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 23, 59, 59);
+      return jstToDate(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 23, 59, 59);
     }
   }
 
+  const d = parseAsJST(deadline);
+  if (isNaN(d.getTime())) return null;
   return d;
 }
 
@@ -184,6 +184,7 @@ function findForcePlacementSlot(
   deadlineDate: Date | null
 ): { start: Date; end: Date } {
   const now = new Date();
+  const jst = nowJST();
   const needed = task.duration_minutes;
   const prefRange = getPreferredHourRange(task.preferred_time);
 
@@ -193,8 +194,8 @@ function findForcePlacementSlot(
     startHour = prefRange[0];
   }
 
-  // Start from tomorrow
-  const baseDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, startHour, 0, 0);
+  // Start from tomorrow in JST
+  const baseDate = jstToDate(jst.year, jst.month, jst.day + 1, startHour);
 
   // If deadline is in the future and we can fit before it, try
   if (deadlineDate && deadlineDate > now) {
