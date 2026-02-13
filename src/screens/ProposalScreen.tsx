@@ -180,7 +180,7 @@ export function ProposalScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
         <TouchableOpacity onPress={() => onNavigate('dashboard')}>
           <Text style={styles.backButton}>← 戻る</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>提案</Text>
+        <Text style={styles.headerTitle}>提案 v2</Text>
         <View style={{ width: 60 }} />
       </View>
 
