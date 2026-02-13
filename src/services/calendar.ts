@@ -3,6 +3,16 @@ import { CalendarEvent, BusySlot, FreeSlot } from '../types';
 
 const CALENDAR_API = 'https://www.googleapis.com/calendar/v3';
 
+// Custom error with HTTP status for 401 detection by callers
+export class CalendarApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'CalendarApiError';
+    this.status = status;
+  }
+}
+
 // C1: Get events for today and tomorrow
 export async function getUpcomingEvents(
   accessToken: string,
@@ -27,7 +37,7 @@ export async function getUpcomingEvents(
 
   if (!res.ok) {
     const errBody = await res.text();
-    throw new Error(`カレンダー取得失敗 (${res.status}): ${errBody}`);
+    throw new CalendarApiError(`カレンダー取得失敗 (${res.status}): ${errBody}`, res.status);
   }
 
   const data = await res.json();
@@ -65,7 +75,7 @@ export async function getBusySlots(
 
   if (!res.ok) {
     const errBody = await res.text();
-    throw new Error(`FreeBusy取得失敗 (${res.status}): ${errBody}`);
+    throw new CalendarApiError(`FreeBusy取得失敗 (${res.status}): ${errBody}`, res.status);
   }
 
   const data = await res.json();
@@ -162,7 +172,7 @@ export async function createCalendarEvent(
 
   if (!res.ok) {
     const errBody = await res.text();
-    throw new Error(`イベント作成失敗 (${res.status}): ${errBody}`);
+    throw new CalendarApiError(`イベント作成失敗 (${res.status}): ${errBody}`, res.status);
   }
 
   const data = await res.json();
@@ -199,7 +209,7 @@ export async function updateCalendarEvent(
 
   if (!res.ok) {
     const errBody = await res.text();
-    throw new Error(`イベント更新失敗 (${res.status}): ${errBody}`);
+    throw new CalendarApiError(`イベント更新失敗 (${res.status}): ${errBody}`, res.status);
   }
 
   const data = await res.json();
@@ -224,7 +234,7 @@ export async function deleteCalendarEvent(
 
   if (!res.ok && res.status !== 404) {
     const errBody = await res.text();
-    throw new Error(`イベント削除失敗 (${res.status}): ${errBody}`);
+    throw new CalendarApiError(`イベント削除失敗 (${res.status}): ${errBody}`, res.status);
   }
 }
 

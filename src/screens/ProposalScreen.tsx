@@ -10,7 +10,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useAuth } from '../contexts/AuthContext';
-import { getBusySlots, calculateFreeSlots, createEventsFromProposal } from '../services/calendar';
+import { getBusySlots, calculateFreeSlots, createEventsFromProposal, CalendarApiError } from '../services/calendar';
 import { generateProposal } from '../services/scheduler';
 import { Task, Proposal, Screen } from '../types';
 import { TaskEditModal } from '../components/TaskEditModal';
@@ -24,7 +24,7 @@ interface Props {
 type ProposalState = 'loading' | 'ready' | 'approving' | 'done' | 'error';
 
 export function ProposalScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
-  const { accessToken } = useAuth();
+  const { accessToken, logout } = useAuth();
   const [proposal, setProposal] = useState<Proposal | null>(null);
   const [state, setState] = useState<ProposalState>('loading');
   const [error, setError] = useState<string | null>(null);
@@ -66,6 +66,10 @@ export function ProposalScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
       setProposal(prop);
       setState('ready');
     } catch (err) {
+      if (err instanceof CalendarApiError && err.status === 401) {
+        logout();
+        return;
+      }
       setError(err instanceof Error ? err.message : String(err));
       setState('error');
     }
@@ -112,6 +116,10 @@ export function ProposalScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
 
       setState('done');
     } catch (err) {
+      if (err instanceof CalendarApiError && err.status === 401) {
+        logout();
+        return;
+      }
       setError(err instanceof Error ? err.message : String(err));
       setState('error');
     }

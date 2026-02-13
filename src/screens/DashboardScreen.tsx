@@ -11,7 +11,7 @@ import {
   Image,
 } from 'react-native';
 import { useAuth } from '../contexts/AuthContext';
-import { getUpcomingEvents, updateCalendarEvent, deleteCalendarEvent } from '../services/calendar';
+import { getUpcomingEvents, updateCalendarEvent, deleteCalendarEvent, CalendarApiError } from '../services/calendar';
 import { CalendarEvent, Screen, Task } from '../types';
 import { TaskEditModal } from '../components/TaskEditModal';
 import { CalendarEventEditModal } from '../components/CalendarEventEditModal';
@@ -44,12 +44,16 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
       const evts = await getUpcomingEvents(accessToken);
       setEvents(evts);
     } catch (err) {
+      if (err instanceof CalendarApiError && err.status === 401) {
+        logout();
+        return;
+      }
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [accessToken]);
+  }, [accessToken, logout]);
 
   useEffect(() => {
     fetchEvents();
@@ -88,6 +92,10 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
       setExpandedEventId(null);
       fetchEvents();
     } catch (err) {
+      if (err instanceof CalendarApiError && err.status === 401) {
+        logout();
+        return;
+      }
       setError(err instanceof Error ? err.message : String(err));
     }
   };
@@ -100,6 +108,10 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
       setExpandedEventId(null);
       fetchEvents();
     } catch (err) {
+      if (err instanceof CalendarApiError && err.status === 401) {
+        logout();
+        return;
+      }
       setError(err instanceof Error ? err.message : String(err));
     }
   };
