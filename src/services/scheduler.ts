@@ -4,6 +4,25 @@ import { Task, FreeSlot, Proposal, ProposalEvent, UnassignedTask } from '../type
 
 const PRIORITY_WEIGHT: Record<string, number> = { '高': 3, '中': 2, '低': 1 };
 
+// Normalize deadline: date-only strings → end of that day (23:59 local time)
+function normalizeDeadline(deadline: string | null): Date | null {
+  if (!deadline) return null;
+  const d = new Date(deadline);
+  if (isNaN(d.getTime())) return null;
+
+  // Date-only string like "2026-02-14" → JS parses as UTC midnight
+  // which makes the deadline effectively too early (9:00 AM JST).
+  // Detect: no 'T' in the string → treat as end-of-day local time.
+  if (!deadline.includes('T')) {
+    const parts = deadline.split('-');
+    if (parts.length === 3) {
+      return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 23, 59, 59);
+    }
+  }
+
+  return d;
+}
+
 function sortTasks(tasks: Task[]): Task[] {
   return [...tasks].sort((a, b) => {
     // 1. Deadline closer first (null = no deadline = later)
@@ -50,6 +69,7 @@ export function generateProposal(tasks: Task[], freeSlots: FreeSlot[]): Proposal
   for (const task of sortedTasks) {
     const needed = task.duration_minutes;
     let placed = false;
+    const deadlineDate = normalizeDeadline(task.deadline);
 
     // Try preferred time slots first
     const prefRange = getPreferredHourRange(task.preferred_time);
@@ -72,7 +92,7 @@ export function generateProposal(tasks: Task[], freeSlots: FreeSlot[]): Proposal
       if (slot.durationMinutes >= needed) {
         // Check deadline constraint
         const proposedEnd = new Date(slot.start.getTime() + needed * 60000);
-        if (task.deadline && proposedEnd > new Date(task.deadline)) {
+        if (deadlineDate && proposedEnd > deadlineDate) {
           continue; // Would exceed deadline
         }
 

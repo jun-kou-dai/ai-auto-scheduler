@@ -57,9 +57,9 @@ function buildSystemPrompt(): string {
 来週月曜日: ${nextMondayISO}
 
 日付の変換:
-- 「今日」「今日中」→ deadline: "${todayISO}T17:00:00"
-- 「明日」「明日まで」→ deadline: "${tomorrowISO}T17:00:00"
-- 「来週」「来週まで」→ deadline: "${nextMondayISO}T17:00:00"
+- 「今日」「今日中」→ deadline: "${todayISO}T23:59:00"
+- 「明日」「明日まで」→ deadline: "${tomorrowISO}T23:59:00"
+- 「来週」「来週まで」→ deadline: "${nextMondayISO}T23:59:00"
 - 「金曜まで」「金曜日まで」→ その週の金曜日を計算してdeadlineに設定
 
 時刻の変換（具体的な時刻が指定された場合）:

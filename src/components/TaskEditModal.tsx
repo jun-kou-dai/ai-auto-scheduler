@@ -60,7 +60,7 @@ export function TaskEditModal({ task, onSave, onCancel }: Props) {
       const normalized = deadline.trim().replace(/[\\/年月]/g, '-').replace(/日/g, '');
       const parts = normalized.split('-').filter(Boolean);
       if (parts.length === 3) {
-        const iso = `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}T17:00:00`;
+        const iso = `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}T23:59:00`;
         const d = new Date(iso);
         if (!isNaN(d.getTime())) {
           parsedDeadline = d.toISOString();
