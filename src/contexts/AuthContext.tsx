@@ -101,6 +101,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       ],
       redirectUri,
       responseType: AuthSession.ResponseType.Token,
+      usePKCE: false,
     },
     discovery
   );
