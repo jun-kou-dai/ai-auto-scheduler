@@ -1,6 +1,5 @@
 // Screen 4: Proposal - show proposed events, allow time editing, approve
 // All tasks are always placed. Users can change time for any event.
-// Build: 2026-02-14T07:20
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View,
@@ -181,7 +180,7 @@ export function ProposalScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
         <TouchableOpacity onPress={() => onNavigate('dashboard')}>
           <Text style={styles.backButton}>← 戻る</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>提案 v3</Text>
+        <Text style={styles.headerTitle}>提案</Text>
         <View style={{ width: 60 }} />
       </View>
 
