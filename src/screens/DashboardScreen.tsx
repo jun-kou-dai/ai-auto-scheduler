@@ -131,6 +131,13 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
     const newTasks = tasks.map((t) => (t.id === updated.id ? updated : t));
     onTasksUpdated(newTasks);
     setEditingTask(null);
+    setExpandedTaskId(null);
+  };
+
+  const handleDeleteTask = (taskId: string) => {
+    const newTasks = tasks.filter((t) => t.id !== taskId);
+    onTasksUpdated(newTasks);
+    setExpandedTaskId(null);
   };
 
   return (
@@ -300,12 +307,20 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
                             </View>
                           </View>
 
-                          <TouchableOpacity
-                            style={styles.editButton}
-                            onPress={() => setEditingTask({ ...t })}
-                          >
-                            <Text style={styles.editButtonText}>編集する</Text>
-                          </TouchableOpacity>
+                          <View style={styles.taskActionRow}>
+                            <TouchableOpacity
+                              style={styles.deleteButton}
+                              onPress={() => handleDeleteTask(t.id)}
+                            >
+                              <Text style={styles.deleteButtonText}>削除</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={[styles.editButton, { flex: 1 }]}
+                              onPress={() => setEditingTask({ ...t })}
+                            >
+                              <Text style={styles.editButtonText}>編集する</Text>
+                            </TouchableOpacity>
+                          </View>
                         </View>
                       )}
                     </View>
@@ -622,6 +637,24 @@ const styles = StyleSheet.create({
     padding: 8,
     minWidth: '45%',
     flex: 1,
+  },
+  taskActionRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  deleteButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    backgroundColor: '#FEF2F2',
+  },
+  deleteButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#DC2626',
   },
   editButton: {
     backgroundColor: '#F1F5F9',
