@@ -175,6 +175,59 @@ export async function createCalendarEvent(
   };
 }
 
+// Update an existing calendar event
+export async function updateCalendarEvent(
+  accessToken: string,
+  eventId: string,
+  updates: { summary?: string; start?: string; end?: string; description?: string }
+): Promise<CalendarEvent> {
+  const body: any = {};
+  if (updates.summary !== undefined) body.summary = updates.summary;
+  if (updates.description !== undefined) body.description = updates.description;
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  if (updates.start) body.start = { dateTime: updates.start, timeZone: tz };
+  if (updates.end) body.end = { dateTime: updates.end, timeZone: tz };
+
+  const res = await fetch(`${CALENDAR_API}/calendars/primary/events/${eventId}`, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const errBody = await res.text();
+    throw new Error(`イベント更新失敗 (${res.status}): ${errBody}`);
+  }
+
+  const data = await res.json();
+  return {
+    id: data.id,
+    summary: data.summary,
+    start: { dateTime: data.start?.dateTime, date: data.start?.date },
+    end: { dateTime: data.end?.dateTime, date: data.end?.date },
+    description: data.description,
+  };
+}
+
+// Delete a calendar event
+export async function deleteCalendarEvent(
+  accessToken: string,
+  eventId: string,
+): Promise<void> {
+  const res = await fetch(`${CALENDAR_API}/calendars/primary/events/${eventId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  if (!res.ok && res.status !== 404) {
+    const errBody = await res.text();
+    throw new Error(`イベント削除失敗 (${res.status}): ${errBody}`);
+  }
+}
+
 // Create multiple events from proposal
 export async function createEventsFromProposal(
   accessToken: string,
