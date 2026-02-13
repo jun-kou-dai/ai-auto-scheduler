@@ -1,4 +1,4 @@
-// Screen 2: Dashboard - today/tomorrow events + unassigned tasks + "create proposal"
+// Screen 2: Dashboard - today/tomorrow events (tappable + editable) + unassigned tasks
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View,
@@ -11,9 +11,10 @@ import {
   Image,
 } from 'react-native';
 import { useAuth } from '../contexts/AuthContext';
-import { getUpcomingEvents } from '../services/calendar';
+import { getUpcomingEvents, updateCalendarEvent, deleteCalendarEvent } from '../services/calendar';
 import { CalendarEvent, Screen, Task } from '../types';
 import { TaskEditModal } from '../components/TaskEditModal';
+import { CalendarEventEditModal } from '../components/CalendarEventEditModal';
 
 interface Props {
   onNavigate: (screen: Screen) => void;
@@ -27,6 +28,14 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Event expand/edit state
+  const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
+  const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
+
+  // Task expand/edit state
+  const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
 
   const fetchEvents = useCallback(async () => {
     if (!accessToken) return;
@@ -67,15 +76,46 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
     return d.toDateString() === tomorrow.toDateString();
   });
 
-  const unassignedTasks = tasks.filter((t) => t.status === 'unassigned');
-  const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
-  const [editingTask, setEditingTask] = useState<Task | null>(null);
+  // Calendar event edit handlers
+  const handleEventSave = async (
+    eventId: string,
+    updates: { summary?: string; start?: string; end?: string; description?: string }
+  ) => {
+    if (!accessToken) return;
+    try {
+      await updateCalendarEvent(accessToken, eventId, updates);
+      setEditingEvent(null);
+      setExpandedEventId(null);
+      fetchEvents();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
 
-  const toggleExpand = (taskId: string) => {
+  const handleEventDelete = async (eventId: string) => {
+    if (!accessToken) return;
+    try {
+      await deleteCalendarEvent(accessToken, eventId);
+      setEditingEvent(null);
+      setExpandedEventId(null);
+      fetchEvents();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  // Task edit handlers
+  const unassignedTasks = tasks.filter((t) => t.status === 'unassigned');
+
+  const toggleExpandEvent = (eventId: string) => {
+    setExpandedEventId((prev) => (prev === eventId ? null : eventId));
+  };
+
+  const toggleExpandTask = (taskId: string) => {
     setExpandedTaskId((prev) => (prev === taskId ? null : taskId));
   };
 
-  const handleSaveEdit = (updated: Task) => {
+  const handleSaveTaskEdit = (updated: Task) => {
     const newTasks = tasks.map((t) => (t.id === updated.id ? updated : t));
     onTasksUpdated(newTasks);
     setEditingTask(null);
@@ -141,24 +181,46 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
             {/* Today */}
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>今日 - {todayStr}</Text>
+              {todayEvents.length > 0 && (
+                <Text style={styles.sectionHint}>タップで詳細・編集</Text>
+              )}
               {todayEvents.length === 0 ? (
                 <View style={styles.emptyCard}>
                   <Text style={styles.emptyText}>予定なし</Text>
                 </View>
               ) : (
-                todayEvents.map((e) => <EventCard key={e.id} event={e} />)
+                todayEvents.map((e) => (
+                  <EventCard
+                    key={e.id}
+                    event={e}
+                    isExpanded={expandedEventId === e.id}
+                    onToggle={() => toggleExpandEvent(e.id)}
+                    onEdit={() => setEditingEvent({ ...e })}
+                  />
+                ))
               )}
             </View>
 
             {/* Tomorrow */}
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>明日 - {tomorrowStr}</Text>
+              {tomorrowEvents.length > 0 && (
+                <Text style={styles.sectionHint}>タップで詳細・編集</Text>
+              )}
               {tomorrowEvents.length === 0 ? (
                 <View style={styles.emptyCard}>
                   <Text style={styles.emptyText}>予定なし</Text>
                 </View>
               ) : (
-                tomorrowEvents.map((e) => <EventCard key={e.id} event={e} />)
+                tomorrowEvents.map((e) => (
+                  <EventCard
+                    key={e.id}
+                    event={e}
+                    isExpanded={expandedEventId === e.id}
+                    onToggle={() => toggleExpandEvent(e.id)}
+                    onEdit={() => setEditingEvent({ ...e })}
+                  />
+                ))
               )}
             </View>
 
@@ -168,14 +230,13 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
                 <Text style={styles.sectionTitle}>
                   未配置タスク ({unassignedTasks.length})
                 </Text>
-                <Text style={styles.sectionHint}>タップして詳細を表示</Text>
+                <Text style={styles.sectionHint}>タップで詳細・編集</Text>
                 {unassignedTasks.map((t) => {
                   const isExpanded = expandedTaskId === t.id;
                   return (
                     <View key={t.id} style={[styles.taskCard, isExpanded && styles.taskCardExpanded]}>
-                      {/* Header: tap to expand/collapse */}
                       <TouchableOpacity
-                        onPress={() => toggleExpand(t.id)}
+                        onPress={() => toggleExpandTask(t.id)}
                         activeOpacity={0.7}
                       >
                         <View style={styles.taskHeader}>
@@ -192,7 +253,6 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
                         </Text>
                       </TouchableOpacity>
 
-                      {/* Expanded body: separate from header touchable */}
                       {isExpanded && (
                         <View style={styles.taskExpanded}>
                           <View style={styles.detailRow}>
@@ -255,12 +315,23 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
         </TouchableOpacity>
       </View>
 
-      {/* Edit Modal - outside ScrollView */}
+      {/* Calendar Event Edit Modal */}
+      {editingEvent && (
+        <CalendarEventEditModal
+          key={editingEvent.id}
+          event={editingEvent}
+          onSave={handleEventSave}
+          onDelete={handleEventDelete}
+          onCancel={() => setEditingEvent(null)}
+        />
+      )}
+
+      {/* Task Edit Modal */}
       {editingTask && (
         <TaskEditModal
           key={editingTask.id}
           task={editingTask}
-          onSave={handleSaveEdit}
+          onSave={handleSaveTaskEdit}
           onCancel={() => setEditingTask(null)}
         />
       )}
@@ -268,7 +339,17 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
   );
 }
 
-function EventCard({ event }: { event: CalendarEvent }) {
+function EventCard({
+  event,
+  isExpanded,
+  onToggle,
+  onEdit,
+}: {
+  event: CalendarEvent;
+  isExpanded: boolean;
+  onToggle: () => void;
+  onEdit: () => void;
+}) {
   const startTime = event.start.dateTime
     ? new Date(event.start.dateTime).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })
     : '終日';
@@ -276,14 +357,46 @@ function EventCard({ event }: { event: CalendarEvent }) {
     ? new Date(event.end.dateTime).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })
     : '';
 
+  const durationMin =
+    event.start.dateTime && event.end.dateTime
+      ? Math.round((new Date(event.end.dateTime).getTime() - new Date(event.start.dateTime).getTime()) / 60000)
+      : null;
+
   return (
-    <View style={styles.eventCard}>
-      <View style={styles.eventTime}>
-        <Text style={styles.eventTimeText}>{startTime}</Text>
-        {endTime ? <Text style={styles.eventTimeSep}>-</Text> : null}
-        {endTime ? <Text style={styles.eventTimeText}>{endTime}</Text> : null}
-      </View>
-      <Text style={styles.eventTitle}>{event.summary}</Text>
+    <View style={[styles.eventCard, isExpanded && styles.eventCardExpanded]}>
+      <TouchableOpacity onPress={onToggle} activeOpacity={0.7}>
+        <View style={styles.eventCardHeader}>
+          <View style={styles.eventTime}>
+            <Text style={styles.eventTimeText}>{startTime}</Text>
+            {endTime ? <Text style={styles.eventTimeSep}>-</Text> : null}
+            {endTime ? <Text style={styles.eventTimeText}>{endTime}</Text> : null}
+          </View>
+          <Text style={styles.eventTitle} numberOfLines={isExpanded ? undefined : 1}>
+            {event.summary}
+          </Text>
+          <Text style={styles.expandArrow}>{isExpanded ? '▲' : '▼'}</Text>
+        </View>
+      </TouchableOpacity>
+
+      {isExpanded && (
+        <View style={styles.eventExpanded}>
+          {durationMin != null && (
+            <View style={styles.eventDetailRow}>
+              <Text style={styles.detailLabel}>所要時間</Text>
+              <Text style={styles.detailValue}>{durationMin}分</Text>
+            </View>
+          )}
+          {event.description ? (
+            <View style={styles.eventDescBox}>
+              <Text style={styles.detailLabel}>メモ</Text>
+              <Text style={styles.eventDescText}>{event.description}</Text>
+            </View>
+          ) : null}
+          <TouchableOpacity style={styles.editButton} onPress={onEdit}>
+            <Text style={styles.editButtonText}>編集する</Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </View>
   );
 }
@@ -353,7 +466,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: '#1E293B',
-    marginBottom: 12,
+    marginBottom: 4,
+  },
+  sectionHint: {
+    fontSize: 12,
+    color: '#94A3B8',
+    marginBottom: 8,
   },
   emptyCard: {
     backgroundColor: '#FFF',
@@ -364,13 +482,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   emptyText: { color: '#94A3B8', fontSize: 14 },
+
+  // Event card styles (interactive)
   eventCard: {
     backgroundColor: '#FFF',
-    padding: 14,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#E2E8F0',
     marginBottom: 8,
+    padding: 14,
+  },
+  eventCardExpanded: {
+    borderColor: '#3B82F6',
+    borderWidth: 1.5,
+  },
+  eventCardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
   },
@@ -382,12 +508,33 @@ const styles = StyleSheet.create({
   eventTimeText: { fontSize: 13, color: '#3B82F6', fontWeight: '600' },
   eventTimeSep: { fontSize: 10, color: '#94A3B8' },
   eventTitle: { fontSize: 14, color: '#1E293B', flex: 1 },
-  sectionHint: {
-    fontSize: 12,
+  expandArrow: {
+    fontSize: 10,
     color: '#94A3B8',
-    marginBottom: 8,
-    marginTop: -8,
+    marginLeft: 8,
   },
+  eventExpanded: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+  },
+  eventDetailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  eventDescBox: {
+    marginBottom: 12,
+  },
+  eventDescText: {
+    fontSize: 13,
+    color: '#1E293B',
+    lineHeight: 20,
+    marginTop: 4,
+  },
+
+  // Task card styles
   taskCard: {
     backgroundColor: '#FFF',
     padding: 14,
@@ -410,10 +557,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-  },
-  expandArrow: {
-    fontSize: 10,
-    color: '#94A3B8',
   },
   taskName: { fontSize: 14, fontWeight: '600', color: '#1E293B', flex: 1 },
   taskDetail: { fontSize: 12, color: '#64748B' },

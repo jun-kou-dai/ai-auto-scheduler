@@ -1,4 +1,5 @@
 // Shared task edit modal used on Dashboard and Proposal screens
+// Includes web-native date picker for deadline input
 import React, { useState } from 'react';
 import {
   View,
@@ -8,6 +9,7 @@ import {
   TextInput,
   Modal,
   ScrollView,
+  Platform,
 } from 'react-native';
 import { Task, Priority, PreferredTime } from '../types';
 
@@ -17,6 +19,18 @@ interface Props {
   onCancel: () => void;
 }
 
+const webDateInputStyle: any = {
+  backgroundColor: '#F8FAFC',
+  border: '1px solid #E2E8F0',
+  borderRadius: 8,
+  padding: '10px 12px',
+  fontSize: 15,
+  color: '#1E293B',
+  width: '100%',
+  boxSizing: 'border-box',
+  fontFamily: 'inherit',
+};
+
 export function TaskEditModal({ task, onSave, onCancel }: Props) {
   const [name, setName] = useState(task.name);
   const [duration, setDuration] = useState(String(task.duration_minutes));
@@ -24,8 +38,9 @@ export function TaskEditModal({ task, onSave, onCancel }: Props) {
   const [deadline, setDeadline] = useState(() => {
     if (!task.deadline) return '';
     const d = new Date(task.deadline);
-    // Use zero-padded YYYY/MM/DD for reliable round-trip parsing
-    return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
+    if (isNaN(d.getTime())) return '';
+    // YYYY-MM-DD format (works for both web date picker and text input)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   });
   const [preferredTime, setPreferredTime] = useState<PreferredTime>(task.preferred_time);
 
@@ -42,8 +57,7 @@ export function TaskEditModal({ task, onSave, onCancel }: Props) {
     let parsedDeadline: string | null = null;
     if (deadline.trim()) {
       // Normalize separators to '-' and parse
-      const normalized = deadline.trim().replace(/[\/年月]/g, '-').replace(/日/g, '');
-      // Zero-pad for reliable ISO parsing: YYYY-MM-DD
+      const normalized = deadline.trim().replace(/[\\/年月]/g, '-').replace(/日/g, '');
       const parts = normalized.split('-').filter(Boolean);
       if (parts.length === 3) {
         const iso = `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}T17:00:00`;
@@ -107,15 +121,29 @@ export function TaskEditModal({ task, onSave, onCancel }: Props) {
               ))}
             </View>
 
-            {/* Deadline */}
-            <Text style={styles.label}>締切（YYYY/MM/DD）</Text>
-            <TextInput
-              style={styles.input}
-              value={deadline}
-              onChangeText={setDeadline}
-              placeholder="例: 2026/02/15（空欄で締切なし）"
-              placeholderTextColor="#94A3B8"
-            />
+            {/* Deadline - web date picker or text input */}
+            <Text style={styles.label}>締切</Text>
+            {Platform.OS === 'web' ? (
+              React.createElement('input', {
+                type: 'date',
+                value: deadline,
+                onChange: (e: any) => setDeadline(e.target.value),
+                style: webDateInputStyle,
+              })
+            ) : (
+              <TextInput
+                style={styles.input}
+                value={deadline}
+                onChangeText={setDeadline}
+                placeholder="例: 2026-02-15（空欄で締切なし）"
+                placeholderTextColor="#94A3B8"
+              />
+            )}
+            {Platform.OS === 'web' && (
+              <TouchableOpacity onPress={() => setDeadline('')}>
+                <Text style={styles.clearDeadline}>締切をクリア</Text>
+              </TouchableOpacity>
+            )}
 
             {/* Preferred time */}
             <Text style={styles.label}>希望時間帯</Text>
@@ -186,6 +214,11 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     fontSize: 15,
     color: '#1E293B',
+  },
+  clearDeadline: {
+    fontSize: 12,
+    color: '#94A3B8',
+    marginTop: 4,
   },
   chipRow: {
     flexDirection: 'row',

@@ -1,5 +1,5 @@
-// Screen 3: Task input - multi-line input + "analyze and propose"
-import React, { useState } from 'react';
+// Screen 3: Task input - multi-line input + voice input + "analyze and propose"
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -23,6 +23,8 @@ export function TaskInputScreen({ onNavigate, onTasksAnalyzed }: Props) {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef<any>(null);
 
   const exampleTasks = `レポートの下書きを作る（2時間、金曜まで）
 チームMTGの資料準備
@@ -48,6 +50,57 @@ export function TaskInputScreen({ onNavigate, onTasksAnalyzed }: Props) {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Web Speech API voice input
+  const voiceSupported = Platform.OS === 'web' && typeof window !== 'undefined' &&
+    (typeof (window as any).SpeechRecognition !== 'undefined' ||
+     typeof (window as any).webkitSpeechRecognition !== 'undefined');
+
+  const startVoiceInput = () => {
+    if (Platform.OS !== 'web') return;
+
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setError('お使いのブラウザは音声入力に対応していません。Chrome推奨です。');
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'ja-JP';
+    recognition.interimResults = false;
+    recognition.continuous = false;
+
+    recognition.onresult = (event: any) => {
+      const transcript = event.results[0][0].transcript;
+      setInput((prev) => prev ? prev + '\n' + transcript : transcript);
+      setIsListening(false);
+    };
+
+    recognition.onerror = (event: any) => {
+      if (event.error === 'not-allowed') {
+        setError('マイクへのアクセスが許可されていません。ブラウザの設定を確認してください。');
+      } else if (event.error !== 'aborted') {
+        setError('音声認識エラー: ' + event.error);
+      }
+      setIsListening(false);
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+    };
+
+    recognitionRef.current = recognition;
+    recognition.start();
+    setIsListening(true);
+    setError(null);
+  };
+
+  const stopVoiceInput = () => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+    }
+    setIsListening(false);
   };
 
   const lineCount = input.split('\n').filter((l) => l.trim()).length;
@@ -83,17 +136,38 @@ export function TaskInputScreen({ onNavigate, onTasksAnalyzed }: Props) {
             onChangeText={setInput}
             textAlignVertical="top"
           />
-          {lineCount > 0 && (
-            <Text style={styles.lineCount}>{lineCount} タスク</Text>
-          )}
+          <View style={styles.inputFooter}>
+            {lineCount > 0 && (
+              <Text style={styles.lineCount}>{lineCount} タスク</Text>
+            )}
+          </View>
         </View>
 
-        <TouchableOpacity
-          style={styles.exampleButton}
-          onPress={() => setInput(exampleTasks)}
-        >
-          <Text style={styles.exampleButtonText}>例文を使う</Text>
-        </TouchableOpacity>
+        {/* Voice input + example buttons */}
+        <View style={styles.actionRow}>
+          {voiceSupported && (
+            <TouchableOpacity
+              style={[styles.voiceButton, isListening && styles.voiceButtonActive]}
+              onPress={isListening ? stopVoiceInput : startVoiceInput}
+            >
+              <Text style={[styles.voiceButtonText, isListening && styles.voiceButtonTextActive]}>
+                {isListening ? '⏹ 録音停止' : '🎤 声で入力'}
+              </Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity
+            style={styles.exampleButton}
+            onPress={() => setInput(exampleTasks)}
+          >
+            <Text style={styles.exampleButtonText}>例文を使う</Text>
+          </TouchableOpacity>
+        </View>
+
+        {isListening && (
+          <View style={styles.listeningBox}>
+            <Text style={styles.listeningText}>🎙 聞いています... 話してください</Text>
+          </View>
+        )}
 
         {error && (
           <View style={styles.errorBox}>
@@ -171,21 +245,62 @@ const styles = StyleSheet.create({
     color: '#1E293B',
     lineHeight: 24,
   },
-  lineCount: {
-    textAlign: 'right',
+  inputFooter: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
     padding: 8,
+  },
+  lineCount: {
     fontSize: 12,
     color: '#94A3B8',
   },
-  exampleButton: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    backgroundColor: '#EFF6FF',
-    borderRadius: 6,
+  actionRow: {
+    flexDirection: 'row',
+    gap: 8,
     marginBottom: 16,
+    flexWrap: 'wrap',
+  },
+  voiceButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    backgroundColor: '#FFF',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  voiceButtonActive: {
+    backgroundColor: '#DC2626',
+    borderColor: '#DC2626',
+  },
+  voiceButtonText: {
+    color: '#3B82F6',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  voiceButtonTextActive: {
+    color: '#FFF',
+  },
+  exampleButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#EFF6FF',
+    borderRadius: 8,
   },
   exampleButtonText: { color: '#3B82F6', fontSize: 13, fontWeight: '600' },
+  listeningBox: {
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 16,
+    alignItems: 'center',
+  },
+  listeningText: {
+    color: '#DC2626',
+    fontSize: 14,
+    fontWeight: '600',
+  },
   errorBox: {
     backgroundColor: '#FEF2F2',
     borderWidth: 1,
