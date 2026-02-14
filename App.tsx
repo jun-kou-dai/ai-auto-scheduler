@@ -19,17 +19,52 @@ import { Screen, Task } from './src/types';
 // Check env once at module load
 const envResult = checkEnv();
 
+// Safe localStorage access (SSR-safe)
+const STORAGE_KEY_TASKS = 'ai_scheduler_tasks';
+
+function getStoredTasks(): Task[] {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      const stored = window.localStorage.getItem(STORAGE_KEY_TASKS);
+      if (stored) return JSON.parse(stored);
+    }
+  } catch { /* ignore */ }
+  return [];
+}
+
+function storeTasks(tasks: Task[]): void {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.setItem(STORAGE_KEY_TASKS, JSON.stringify(tasks));
+    }
+  } catch { /* ignore */ }
+}
+
+function clearStoredTasks(): void {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.removeItem(STORAGE_KEY_TASKS);
+    }
+  } catch { /* ignore */ }
+}
+
 function AppRouter() {
   const { user, onLogout } = useAuth();
   const [screen, setScreen] = useState<Screen>('login');
-  const [tasks, setTasks] = useState<Task[]>([]);
+  const [tasks, setTasks] = useState<Task[]>(getStoredTasks);
   const prevUserRef = useRef(user);
+
+  // Persist tasks to localStorage whenever they change
+  useEffect(() => {
+    storeTasks(tasks);
+  }, [tasks]);
 
   // Reset state when user logs out (BUG 18+19 fix)
   useEffect(() => {
     onLogout(() => {
       setScreen('login');
       setTasks([]);
+      clearStoredTasks();
     });
   }, [onLogout]);
 

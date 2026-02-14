@@ -1,4 +1,5 @@
 // Screen 2: Dashboard - today/tomorrow events (tappable + editable) + unassigned tasks
+// Time-aware display: past events dimmed, current event highlighted, now indicator
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View,
@@ -38,6 +39,9 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
 
+  // Current time state (updates every 30 seconds for time-aware display)
+  const [now, setNow] = useState(new Date());
+
   const fetchEvents = useCallback(async () => {
     if (!accessToken) return;
     try {
@@ -56,9 +60,26 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
     }
   }, [accessToken, logout]);
 
+  // Fetch events on mount + delayed re-fetch to catch recently created events
   useEffect(() => {
     fetchEvents();
+    const timer = setTimeout(fetchEvents, 2000);
+    return () => clearTimeout(timer);
   }, [fetchEvents]);
+
+  // Keep current time updated every 30 seconds
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 30000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Auto-refresh events every 5 minutes
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (accessToken) fetchEvents();
+    }, 5 * 60 * 1000);
+    return () => clearInterval(timer);
+  }, [accessToken, fetchEvents]);
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -84,6 +105,40 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
     const t = new Date(e.start.dateTime || e.start.date || '').getTime();
     return t >= tomorrowStart && t < dayAfterStart;
   });
+
+  // Event status helper (past / current / upcoming)
+  const getEventStatus = (event: CalendarEvent): 'past' | 'current' | 'upcoming' => {
+    // All-day events shown in today are always "current"
+    if (!event.start.dateTime && event.start.date) return 'current';
+
+    const start = new Date(event.start.dateTime || '');
+    const end = new Date(event.end.dateTime || '');
+    if (end.getTime() <= now.getTime()) return 'past';
+    if (start.getTime() <= now.getTime()) return 'current';
+    return 'upcoming';
+  };
+
+  // Current time string in JST
+  const currentTimeStr = now.toLocaleTimeString('ja-JP', {
+    timeZone: 'Asia/Tokyo',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+
+  // Now indicator position for today's events
+  const nowMs = now.getTime();
+  let nowInsertIndex = todayEvents.length;
+  for (let i = 0; i < todayEvents.length; i++) {
+    const eventStart = new Date(todayEvents[i].start.dateTime || todayEvents[i].start.date || '').getTime();
+    if (eventStart > nowMs) {
+      nowInsertIndex = i;
+      break;
+    }
+  }
+
+  // Today's event stats
+  const todayPastCount = todayEvents.filter(e => getEventStatus(e) === 'past').length;
+  const todayRemainingCount = todayEvents.length - todayPastCount;
 
   // Calendar event edit handlers
   const handleEventSave = async (
@@ -202,26 +257,65 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
           </View>
         ) : (
           <>
+            {/* Unassigned tasks notification banner */}
+            {unassignedTasks.length > 0 && (
+              <TouchableOpacity
+                style={styles.unassignedBanner}
+                onPress={() => onNavigate('proposal')}
+                activeOpacity={0.7}
+              >
+                <View style={styles.unassignedBannerContent}>
+                  <View>
+                    <Text style={styles.unassignedBannerTitle}>
+                      {unassignedTasks.length}件の未配置タスク
+                    </Text>
+                    <Text style={styles.unassignedBannerSub}>
+                      タップしてスケジュールに配置
+                    </Text>
+                  </View>
+                  <Text style={styles.unassignedBannerArrow}>→</Text>
+                </View>
+              </TouchableOpacity>
+            )}
+
             {/* Today */}
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>今日 - {todayStr}</Text>
+              <View style={styles.sectionTitleRow}>
+                <Text style={styles.sectionTitle}>今日 - {todayStr}</Text>
+                <Text style={styles.currentTimeText}>{currentTimeStr}</Text>
+              </View>
               {todayEvents.length > 0 && (
-                <Text style={styles.sectionHint}>タップで詳細・編集</Text>
+                <Text style={styles.sectionHint}>
+                  {todayPastCount === todayEvents.length
+                    ? '本日の予定はすべて終了しました'
+                    : todayPastCount > 0
+                    ? `${todayPastCount}件終了 ・ 残り${todayRemainingCount}件`
+                    : 'タップで詳細・編集'}
+                </Text>
               )}
               {todayEvents.length === 0 ? (
                 <View style={styles.emptyCard}>
                   <Text style={styles.emptyText}>予定なし</Text>
                 </View>
               ) : (
-                todayEvents.map((e) => (
-                  <EventCard
-                    key={e.id}
-                    event={e}
-                    isExpanded={expandedEventId === e.id}
-                    onToggle={() => toggleExpandEvent(e.id)}
-                    onEdit={() => setEditingEvent({ ...e })}
-                  />
-                ))
+                <>
+                  {todayEvents.map((e, idx) => {
+                    const status = getEventStatus(e);
+                    return (
+                      <React.Fragment key={e.id}>
+                        {idx === nowInsertIndex && <NowIndicator time={currentTimeStr} />}
+                        <EventCard
+                          event={e}
+                          status={status}
+                          isExpanded={expandedEventId === e.id}
+                          onToggle={() => toggleExpandEvent(e.id)}
+                          onEdit={() => setEditingEvent({ ...e })}
+                        />
+                      </React.Fragment>
+                    );
+                  })}
+                  {nowInsertIndex === todayEvents.length && <NowIndicator time={currentTimeStr} />}
+                </>
               )}
             </View>
 
@@ -248,7 +342,7 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
               )}
             </View>
 
-            {/* Unassigned tasks */}
+            {/* Unassigned tasks detail section */}
             {unassignedTasks.length > 0 && (
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>
@@ -331,6 +425,16 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
                     </View>
                   );
                 })}
+
+                {/* Schedule unassigned tasks button */}
+                <TouchableOpacity
+                  style={styles.scheduleButton}
+                  onPress={() => onNavigate('proposal')}
+                >
+                  <Text style={styles.scheduleButtonText}>
+                    {unassignedTasks.length}件のタスクをスケジュールする
+                  </Text>
+                </TouchableOpacity>
               </View>
             )}
           </>
@@ -371,13 +475,29 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
   );
 }
 
+// --- Now Indicator (red line showing current time) ---
+
+function NowIndicator({ time }: { time: string }) {
+  return (
+    <View style={styles.nowIndicator}>
+      <View style={styles.nowDot} />
+      <View style={styles.nowLine} />
+      <Text style={styles.nowText}>現在 {time}</Text>
+    </View>
+  );
+}
+
+// --- Event Card with time-aware status ---
+
 function EventCard({
   event,
+  status,
   isExpanded,
   onToggle,
   onEdit,
 }: {
   event: CalendarEvent;
+  status?: 'past' | 'current' | 'upcoming';
   isExpanded: boolean;
   onToggle: () => void;
   onEdit: () => void;
@@ -394,18 +514,39 @@ function EventCard({
       ? Math.round((new Date(event.end.dateTime).getTime() - new Date(event.start.dateTime).getTime()) / 60000)
       : null;
 
+  const isPast = status === 'past';
+  const isCurrent = status === 'current';
+
   return (
-    <View style={[styles.eventCard, isExpanded && styles.eventCardExpanded]}>
+    <View style={[
+      styles.eventCard,
+      isExpanded && styles.eventCardExpanded,
+      isPast && styles.eventCardPast,
+      isCurrent && styles.eventCardCurrent,
+    ]}>
       <TouchableOpacity onPress={onToggle} activeOpacity={0.7}>
         <View style={styles.eventCardHeader}>
           <View style={styles.eventTime}>
-            <Text style={styles.eventTimeText}>{startTime}</Text>
-            {endTime ? <Text style={styles.eventTimeSep}>-</Text> : null}
-            {endTime ? <Text style={styles.eventTimeText}>{endTime}</Text> : null}
+            <Text style={[styles.eventTimeText, isPast && styles.textPast]}>
+              {startTime}
+            </Text>
+            {endTime ? <Text style={[styles.eventTimeSep, isPast && styles.textPast]}>-</Text> : null}
+            {endTime ? <Text style={[styles.eventTimeText, isPast && styles.textPast]}>
+              {endTime}
+            </Text> : null}
           </View>
-          <Text style={styles.eventTitle} numberOfLines={isExpanded ? undefined : 1}>
+          <Text
+            style={[styles.eventTitle, isPast && styles.textPast]}
+            numberOfLines={isExpanded ? undefined : 1}
+          >
             {event.summary}
           </Text>
+          {isPast && <Text style={styles.pastBadge}>済</Text>}
+          {isCurrent && (
+            <View style={styles.currentBadge}>
+              <Text style={styles.currentBadgeText}>進行中</Text>
+            </View>
+          )}
           <Text style={styles.expandArrow}>{isExpanded ? '▲' : '▼'}</Text>
         </View>
       </TouchableOpacity>
@@ -494,11 +635,24 @@ const styles = StyleSheet.create({
   loadingBox: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60 },
   loadingText: { marginTop: 12, color: '#64748B', fontSize: 14 },
   section: { marginBottom: 24 },
+
+  // Section title with current time
+  sectionTitleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
   sectionTitle: {
     fontSize: 16,
     fontWeight: '700',
     color: '#1E293B',
     marginBottom: 4,
+  },
+  currentTimeText: {
+    fontSize: 13,
+    color: '#EF4444',
+    fontWeight: '700',
   },
   sectionHint: {
     fontSize: 12,
@@ -515,7 +669,63 @@ const styles = StyleSheet.create({
   },
   emptyText: { color: '#94A3B8', fontSize: 14 },
 
-  // Event card styles (interactive)
+  // Unassigned tasks notification banner
+  unassignedBanner: {
+    backgroundColor: '#FFF7ED',
+    borderWidth: 1,
+    borderColor: '#FED7AA',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 16,
+  },
+  unassignedBannerContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  unassignedBannerTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#C2410C',
+  },
+  unassignedBannerSub: {
+    fontSize: 12,
+    color: '#EA580C',
+    marginTop: 2,
+  },
+  unassignedBannerArrow: {
+    fontSize: 20,
+    color: '#EA580C',
+    fontWeight: '700',
+  },
+
+  // Now indicator
+  nowIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 6,
+    paddingHorizontal: 2,
+  },
+  nowDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#EF4444',
+  },
+  nowLine: {
+    flex: 1,
+    height: 2,
+    backgroundColor: '#EF4444',
+    marginLeft: 4,
+    marginRight: 6,
+  },
+  nowText: {
+    fontSize: 11,
+    color: '#EF4444',
+    fontWeight: '700',
+  },
+
+  // Event card styles (interactive + status-aware)
   eventCard: {
     backgroundColor: '#FFF',
     borderRadius: 12,
@@ -527,6 +737,37 @@ const styles = StyleSheet.create({
   eventCardExpanded: {
     borderColor: '#3B82F6',
     borderWidth: 1.5,
+  },
+  eventCardPast: {
+    opacity: 0.55,
+    backgroundColor: '#F8FAFC',
+  },
+  eventCardCurrent: {
+    borderLeftWidth: 3,
+    borderLeftColor: '#3B82F6',
+    backgroundColor: '#EFF6FF',
+    borderColor: '#93C5FD',
+  },
+  textPast: {
+    color: '#94A3B8',
+  },
+  pastBadge: {
+    fontSize: 11,
+    color: '#94A3B8',
+    fontWeight: '600',
+    marginRight: 4,
+  },
+  currentBadge: {
+    backgroundColor: '#3B82F6',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginRight: 4,
+  },
+  currentBadgeText: {
+    fontSize: 10,
+    color: '#FFF',
+    fontWeight: '700',
   },
   eventCardHeader: {
     flexDirection: 'row',
@@ -673,6 +914,18 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#3B82F6',
+  },
+  scheduleButton: {
+    backgroundColor: '#16A34A',
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  scheduleButtonText: {
+    color: '#FFF',
+    fontWeight: '700',
+    fontSize: 14,
   },
   badge: {
     paddingHorizontal: 8,
