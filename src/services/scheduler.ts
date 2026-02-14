@@ -117,7 +117,7 @@ export function generateProposal(tasks: Task[], freeSlots: FreeSlot[]): Proposal
         if (slot.durationMinutes >= needed) {
           const proposedEnd = new Date(slot.start.getTime() + needed * 60000);
           const warning = deadlineDate
-            ? `締切（${deadlineDate.toLocaleDateString('ja-JP')}）を過ぎますが、最短の空き枠に配置しました`
+            ? `締切（${deadlineDate.toLocaleDateString('ja-JP', { timeZone: 'Asia/Tokyo' })}）を過ぎますが、最短の空き枠に配置しました`
             : undefined;
 
           events.push({
@@ -141,7 +141,7 @@ export function generateProposal(tasks: Task[], freeSlots: FreeSlot[]): Proposal
       const warnings: string[] = [];
       warnings.push('空き枠が不足のため、既存予定と重複する可能性があります');
       if (deadlineDate && forceSlot.end > deadlineDate) {
-        warnings.push(`締切（${deadlineDate.toLocaleDateString('ja-JP')}）を過ぎています`);
+        warnings.push(`締切（${deadlineDate.toLocaleDateString('ja-JP', { timeZone: 'Asia/Tokyo' })}）を過ぎています`);
       }
 
       events.push({
@@ -202,9 +202,9 @@ function findForcePlacementSlot(
     const tryStart = new Date(deadlineDate.getTime() - needed * 60000);
     if (tryStart > now) {
       // Place just before deadline
-      const hour = tryStart.getHours();
-      // Ensure it's a reasonable hour (6-23)
-      if (hour >= 6 && hour <= 23) {
+      const jstHour = (tryStart.getUTCHours() + 9) % 24;
+      // Ensure it's a reasonable hour (6-23) in JST
+      if (jstHour >= 6 && jstHour <= 23) {
         return {
           start: tryStart,
           end: deadlineDate,

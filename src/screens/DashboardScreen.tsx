@@ -272,7 +272,7 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
                         </View>
                         <Text style={styles.taskDetail}>
                           {t.duration_minutes}分
-                          {t.deadline ? ` | 締切: ${new Date(t.deadline).toLocaleDateString('ja-JP')}` : ''}
+                          {t.deadline ? ` | 締切: ${new Date(t.deadline).toLocaleDateString('ja-JP', { timeZone: 'Asia/Tokyo' })}` : ''}
                           {t.preferred_time ? ` | ${t.preferred_time}希望` : ''}
                         </Text>
                       </TouchableOpacity>
@@ -303,7 +303,7 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
                             <View style={styles.detailItem}>
                               <Text style={styles.detailLabel}>締切</Text>
                               <Text style={styles.detailValue}>
-                                {t.deadline ? new Date(t.deadline).toLocaleDateString('ja-JP') : 'なし'}
+                                {t.deadline ? new Date(t.deadline).toLocaleDateString('ja-JP', { timeZone: 'Asia/Tokyo' }) : 'なし'}
                               </Text>
                             </View>
                             <View style={styles.detailItem}>
@@ -383,10 +383,10 @@ function EventCard({
   onEdit: () => void;
 }) {
   const startTime = event.start.dateTime
-    ? new Date(event.start.dateTime).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })
+    ? new Date(event.start.dateTime).toLocaleTimeString('ja-JP', { timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit' })
     : '終日';
   const endTime = event.end.dateTime
-    ? new Date(event.end.dateTime).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })
+    ? new Date(event.end.dateTime).toLocaleTimeString('ja-JP', { timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit' })
     : '';
 
   const durationMin =

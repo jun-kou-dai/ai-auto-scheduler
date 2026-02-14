@@ -15,6 +15,7 @@ import { getBusySlots, calculateFreeSlots, createEventsFromProposal, CalendarApi
 import { generateProposal } from '../services/scheduler';
 import { Task, Proposal, ProposalEvent, Screen } from '../types';
 import { TaskEditModal } from '../components/TaskEditModal';
+import { parseAsJST } from '../utils/timezone';
 
 interface Props {
   onNavigate: (screen: Screen) => void;
@@ -24,11 +25,16 @@ interface Props {
 
 type ProposalState = 'loading' | 'ready' | 'approving' | 'done' | 'error';
 
-// Helper to format ISO datetime to datetime-local input value
+// Helper to format ISO datetime to datetime-local input value (in JST)
 function toDatetimeLocal(iso: string): string {
   const d = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Tokyo',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  }).formatToParts(d);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value || '00';
+  return `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}`;
 }
 
 export function ProposalScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
@@ -107,7 +113,7 @@ export function ProposalScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
     const task = tasks.find((t) => t.id === taskId);
     if (!task) return;
 
-    const newStart = new Date(newStartISO);
+    const newStart = parseAsJST(newStartISO);
     if (isNaN(newStart.getTime())) return;
 
     const newEnd = new Date(newStart.getTime() + task.duration_minutes * 60000);
@@ -239,11 +245,12 @@ export function ProposalScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
                   const startDate = new Date(evt.start);
                   const endDate = new Date(evt.end);
                   const dayLabel = startDate.toLocaleDateString('ja-JP', {
+                    timeZone: 'Asia/Tokyo',
                     month: 'short',
                     day: 'numeric',
                     weekday: 'short',
                   });
-                  const timeLabel = `${startDate.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })} - ${endDate.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}`;
+                  const timeLabel = `${startDate.toLocaleTimeString('ja-JP', { timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit' })} - ${endDate.toLocaleTimeString('ja-JP', { timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit' })}`;
 
                   return (
                     <View key={i} style={[styles.proposalCard, isExpanded && styles.proposalCardExpanded, evt.warning ? styles.proposalCardWarning : null]}>
@@ -265,7 +272,7 @@ export function ProposalScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
                         <Text style={styles.proposalDuration}>
                           {task ? `${task.duration_minutes}分` : ''}
                           {task?.preferred_time ? ` | ${task.preferred_time}希望` : ''}
-                          {task?.deadline ? ` | 締切: ${new Date(task.deadline).toLocaleDateString('ja-JP')}` : ''}
+                          {task?.deadline ? ` | 締切: ${new Date(task.deadline).toLocaleDateString('ja-JP', { timeZone: 'Asia/Tokyo' })}` : ''}
                         </Text>
                         {evt.warning && (
                           <View style={styles.warningBanner}>
@@ -303,7 +310,7 @@ export function ProposalScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
                                 <View style={styles.detailItem}>
                                   <Text style={styles.detailLabel}>締切</Text>
                                   <Text style={styles.detailValue}>
-                                    {task.deadline ? new Date(task.deadline).toLocaleDateString('ja-JP') : 'なし'}
+                                    {task.deadline ? new Date(task.deadline).toLocaleDateString('ja-JP', { timeZone: 'Asia/Tokyo' }) : 'なし'}
                                   </Text>
                                 </View>
                                 <View style={styles.detailItem}>
