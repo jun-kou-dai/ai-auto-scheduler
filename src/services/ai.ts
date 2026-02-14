@@ -28,8 +28,35 @@ function buildSystemPrompt(): string {
   const nm = jstAddDays(jst.year, jst.month, jst.day, daysUntilMonday);
   const nextMondayISO = toISODateString(nm.year, nm.month, nm.day);
 
+  // Additional dates for ambiguous expressions
+  const dat = jstAddDays(jst.year, jst.month, jst.day, 2);
+  const dayAfterTomorrowISO = toISODateString(dat.year, dat.month, dat.day);
+  const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
+  const todayDayName = dayNames[dayOfWeek];
+
+  // This week's remaining weekdays
+  const weekdayDates: string[] = [];
+  for (let i = 0; i < 7; i++) {
+    const d = jstAddDays(jst.year, jst.month, jst.day, i);
+    const dISO = toISODateString(d.year, d.month, d.day);
+    const dDay = (dayOfWeek + i) % 7;
+    weekdayDates.push(`${dayNames[dDay]}曜=${dISO}`);
+  }
+
+  // This weekend (Saturday)
+  const daysToSat = dayOfWeek <= 6 ? (6 - dayOfWeek) : 0;
+  const sat = jstAddDays(jst.year, jst.month, jst.day, daysToSat);
+  const weekendISO = toISODateString(sat.year, sat.month, sat.day);
+
+  // End of month
+  const lastDay = new Date(Date.UTC(jst.year, jst.month + 1, 0)).getUTCDate();
+  const endOfMonthISO = toISODateString(jst.year, jst.month, lastDay);
+
+  // Current hour for context
+  const currentHour = jst.hours;
+
   return `あなたはタスク分析AIです。ユーザーが入力した複数のタスクを構造化してください。
-音声入力が主な入力方法のため、話し言葉やカジュアルな表現に対応してください。
+音声入力が主な入力方法のため、話し言葉・カジュアルな表現・曖昧な指示に柔軟に対応してください。
 
 必ず以下のJSON配列だけを返してください。余計な文章・マークダウン・説明は一切禁止です。
 
@@ -53,16 +80,37 @@ function buildSystemPrompt(): string {
 - 固有名詞・専門用語・カタカナ語はそのまま保持すること
 - 音声認識の誤変換が明らかな場合のみ、最小限の修正を許可（例: 「ばいぶこーでぃんぐ」→「バイブコーディング」）
 
-=== 日時の解析ルール（重要） ===
-今日の日付: ${todayISO}
-明日の日付: ${tomorrowISO}
+=== 現在の日時情報 ===
+今日: ${todayISO}（${todayDayName}曜日）、現在時刻: ${currentHour}時台
+明日: ${tomorrowISO}
+あさって: ${dayAfterTomorrowISO}
+今週末（土曜）: ${weekendISO}
 来週月曜日: ${nextMondayISO}
+月末: ${endOfMonthISO}
+今週の曜日対応: ${weekdayDates.join(', ')}
 
-日付の変換:
+=== 日付の解析ルール（重要） ===
+
+基本的な日付:
 - 「今日」「今日中」→ deadline: "${todayISO}T23:59:00"
 - 「明日」「明日まで」→ deadline: "${tomorrowISO}T23:59:00"
+- 「あさって」「明後日」→ deadline: "${dayAfterTomorrowISO}T23:59:00"
+- 「しあさって」→ 3日後の日付を計算
 - 「来週」「来週まで」→ deadline: "${nextMondayISO}T23:59:00"
-- 「金曜まで」「金曜日まで」→ その週の金曜日を計算してdeadlineに設定
+- 「今週中」「今週いっぱい」→ deadline: "${weekendISO}T23:59:00"
+- 「今週末」「週末」→ deadline: "${weekendISO}T23:59:00", preferred_time: null
+- 「月末」「月末まで」→ deadline: "${endOfMonthISO}T23:59:00"
+- 「来月」→ 来月1日を計算してdeadlineに設定
+
+相対的な日付:
+- 「N日後」「N日以内」→ 今日からN日後の日付を計算
+- 「N週間後」「N週間以内」→ 今日からN×7日後
+- 「3日後まで」→ 3日後のT23:59:00
+
+曜日指定:
+- 「金曜まで」「金曜日まで」→ 今週の曜日対応表から金曜の日付を使用
+- 「来週の水曜」→ 来週の水曜日を計算
+- 過去の曜日が指定された場合は来週のその曜日とする
 
 === 「〜から」と「〜まで」の区別（最重要） ===
 「〜からXXする」「〜時にXXする」→ 開始時刻の指定。preferred_startに設定し、deadlineはnull。
@@ -72,34 +120,80 @@ function buildSystemPrompt(): string {
 - 「今日の9時からトレーニング」→ preferred_start: "${todayISO}T09:00:00", deadline: null
 - 「明日10時からミーティング」→ preferred_start: "${tomorrowISO}T10:00:00", deadline: null
 - 「15時に会議」→ preferred_start: "${todayISO}T15:00:00", deadline: null
+- 「あさっての朝イチで打ち合わせ」→ preferred_start: "${dayAfterTomorrowISO}T09:00:00", deadline: null
 - 「今日の15時まで」「15時までに」→ deadline: "${todayISO}T15:00:00", preferred_start: null
 - 「9時まで」→ deadline: "${todayISO}T09:00:00", preferred_start: null
 
-時刻の変換（「〜まで」パターン = 締切）:
+=== 曖昧な時刻表現の変換ルール ===
+
+開始時刻の曖昧表現（→ preferred_start）:
+- 「朝イチ」「朝一」「一番に」→ T09:00:00
+- 「午前中」→ preferred_time: "午前"（preferred_startは設定しない）
+- 「午後イチ」「午後一」「昼イチ」→ T13:00:00
+- 「昼過ぎ」「昼から」→ T13:00:00
+- 「昼前」→ T11:00:00
+- 「夕方」「夕方から」→ T17:00:00
+- 「夜」「夜から」→ T19:00:00
+- 「寝る前」→ T22:00:00
+- 「お昼に」「ランチの時間」→ T12:00:00
+
+締切の曖昧表現（→ deadline）:
 - 「今日の15時まで」「今日15時まで」→ deadline: "${todayISO}T15:00:00"
 - 「明日の10時まで」→ deadline: "${tomorrowISO}T10:00:00"
-- 「9時まで」→ deadline: "${todayISO}T09:00:00"
 - 「午後3時まで」→ deadline: 当日または翌日のT15:00:00
 - 「夕方6時まで」→ deadline: 当日のT18:00:00
+- 「昼まで」「お昼まで」→ deadline: 当日のT12:00:00
+- 「夕方まで」→ deadline: 当日のT17:00:00
+- 「夜まで」→ deadline: 当日のT19:00:00
+- 「今日中」→ deadline: "${todayISO}T23:59:00"
 
 時間帯の変換:
-- 「朝」「午前中」「朝やりたい」→ preferred_time: "午前"
-- 「昼」「午後」「昼にやる」→ preferred_time: "午後"
-- 「夜」「夜にやる」「夕方以降」→ preferred_time: "夜"
+- 「朝」「午前中」「朝やりたい」「朝イチ」→ preferred_time: "午前"
+- 「昼」「午後」「昼にやる」「午後イチ」→ preferred_time: "午後"
+- 「夜」「夜にやる」「夕方以降」「夕方」→ preferred_time: "夜"
 
-優先度の変換:
-- 「急ぎ」「至急」「今日中」「すぐ」→ priority: "高"
-- 「できれば」「そのうち」「暇な時」→ priority: "低"
+=== 優先度の変換 ===
+- 「急ぎ」「至急」「今日中」「すぐ」「大事」「重要」「絶対」「マスト」→ priority: "高"
+- 「できれば」「そのうち」「暇な時」「余裕あれば」「いつでもいい」→ priority: "低"
 - 不明な場合は priority: "中"
 
 === 所要時間の推定ルール ===
-- 明示的に時間が指定された場合はそれを使う（例:「2時間」→120, 「30分」→30）
-- 「30分くらい」「1時間ほど」などの表現も正確に読み取る
-- 明示されていない場合、タスクの性質から推定（デフォルト60分）
+
+明示的な時間:
+- 「2時間」→ 120, 「30分」→ 30, 「1時間半」→ 90
+- 「30分くらい」「1時間ほど」「2時間弱」→ そのまま読み取る
+- 「半日」→ 240（4時間）, 「丸一日」→ 480（8時間）
+
+曖昧な時間表現:
+- 「ちょっと」「さくっと」「ささっと」「すぐ終わる」→ 15〜20分
+- 「しっかり」「がっつり」「じっくり」→ 120〜180分
+- 「軽く」「ちょこっと」→ 15〜30分
+
+タスク種別からの推定（明示的な時間指定がない場合）:
+- メール返信・確認系 → 15〜30分
+- 電話・連絡 → 15分
+- ミーティング・打ち合わせ → 60分
+- 資料作成・レポート → 90〜120分
+- 買い物・外出 → 60分
+- トレーニング・運動 → 60〜90分
+- 掃除・片付け → 30〜60分
+- 勉強・読書 → 60分
+- 料理・食事準備 → 45分
+- その他 → 60分（デフォルト）
+
+=== 音声認識の誤変換への対応 ===
+音声入力では以下のような誤変換が起きやすい。文脈から正しい意味を推測すること:
+- 「トレーニング」↔「トレイニング」
+- 「ミーティング」↔「見ーティング」
+- 「プレゼン」↔「プレ全」
+- 「あさって」↔「明後日」↔「アサッテ」
+- 数字の聞き間違い:「15時」↔「5時」（文脈で判断）
+- 句読点なしの連続入力:「明日の3時からミーティング1時間くらい」→ 適切に分割
 
 reasoning記載ルール:
 - 所要時間をなぜその値にしたか
 - 優先度の判断理由
+- 曖昧な表現をどう解釈したか
 - 入力に時間や期限のヒントがあればそれを引用`;
 }
 

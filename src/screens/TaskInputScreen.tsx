@@ -1,5 +1,5 @@
 // Screen 3: Task input - multi-line input + voice input + "analyze and propose"
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -24,8 +24,31 @@ export function TaskInputScreen({ onNavigate, onTasksAnalyzed }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isListening, setIsListening] = useState(false);
+  const [interimText, setInterimText] = useState('');
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
   const isListeningRef = useRef(false);
   const recognitionRef = useRef<any>(null);
+  const timerRef = useRef<any>(null);
+
+  // Recording timer
+  useEffect(() => {
+    if (isListening) {
+      setRecordingSeconds(0);
+      timerRef.current = setInterval(() => {
+        setRecordingSeconds((s) => s + 1);
+      }, 1000);
+    } else {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+      setRecordingSeconds(0);
+      setInterimText('');
+    }
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [isListening]);
 
   const exampleTasks = `レポートの下書きを作る（2時間、金曜まで）
 チームMTGの資料準備
@@ -69,18 +92,25 @@ export function TaskInputScreen({ onNavigate, onTasksAnalyzed }: Props) {
 
     const recognition = new SpeechRecognition();
     recognition.lang = 'ja-JP';
-    recognition.interimResults = false;
+    recognition.interimResults = true;
     recognition.continuous = true;
+    recognition.maxAlternatives = 1;
 
     recognition.onresult = (event: any) => {
-      // continuous mode: process only new results
+      let interim = '';
       for (let i = event.resultIndex; i < event.results.length; i++) {
         if (event.results[i].isFinal) {
           const transcript = event.results[i][0].transcript.trim();
           if (transcript) {
             setInput((prev) => prev ? prev + '\n' + transcript : transcript);
           }
+          setInterimText('');
+        } else {
+          interim += event.results[i][0].transcript;
         }
+      }
+      if (interim) {
+        setInterimText(interim);
       }
     };
 
@@ -90,7 +120,7 @@ export function TaskInputScreen({ onNavigate, onTasksAnalyzed }: Props) {
         isListeningRef.current = false;
         setIsListening(false);
       } else if (event.error === 'no-speech') {
-        // no-speech is common in continuous mode, just restart
+        // no-speech is normal during pauses, auto-restart handles it
       } else if (event.error !== 'aborted') {
         setError('音声認識エラー: ' + event.error);
         isListeningRef.current = false;
@@ -99,14 +129,18 @@ export function TaskInputScreen({ onNavigate, onTasksAnalyzed }: Props) {
     };
 
     recognition.onend = () => {
-      // In continuous mode, auto-restart if still supposed to be listening
+      // Auto-restart with short delay to prevent browser throttling
       if (recognitionRef.current && isListeningRef.current) {
-        try {
-          recognition.start();
-        } catch {
-          isListeningRef.current = false;
-          setIsListening(false);
-        }
+        setTimeout(() => {
+          if (isListeningRef.current && recognitionRef.current) {
+            try {
+              recognitionRef.current.start();
+            } catch {
+              isListeningRef.current = false;
+              setIsListening(false);
+            }
+          }
+        }, 300);
       } else {
         isListeningRef.current = false;
         setIsListening(false);
@@ -127,6 +161,12 @@ export function TaskInputScreen({ onNavigate, onTasksAnalyzed }: Props) {
       recognitionRef.current = null;
     }
     setIsListening(false);
+  };
+
+  const formatTime = (sec: number) => {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${m}:${String(s).padStart(2, '0')}`;
   };
 
   const lineCount = input.split('\n').filter((l) => l.trim()).length;
@@ -191,8 +231,18 @@ export function TaskInputScreen({ onNavigate, onTasksAnalyzed }: Props) {
 
         {isListening && (
           <View style={styles.listeningBox}>
-            <Text style={styles.listeningText}>🎙 聞いています... タスクを1つずつ話してください</Text>
-            <Text style={styles.listeningHint}>例:「明日の15時までにレポート作成」「バイブコーディング30分」</Text>
+            <View style={styles.listeningHeader}>
+              <Text style={styles.listeningText}>🎙 録音中</Text>
+              <Text style={styles.recordingTime}>{formatTime(recordingSeconds)}</Text>
+            </View>
+            {interimText ? (
+              <Text style={styles.interimText}>{interimText}</Text>
+            ) : (
+              <Text style={styles.listeningHint}>話してください... ゆっくりでOKです</Text>
+            )}
+            <Text style={styles.listeningExamples}>
+              例:「あさっての午後イチにミーティング」「今週中にレポート」「さくっと30分で掃除」
+            </Text>
           </View>
         )}
 
@@ -321,16 +371,45 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 14,
     marginBottom: 16,
+  },
+  listeningHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 8,
   },
   listeningText: {
     color: '#DC2626',
     fontSize: 14,
     fontWeight: '600',
   },
+  recordingTime: {
+    color: '#DC2626',
+    fontSize: 14,
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
+  },
+  interimText: {
+    color: '#1E293B',
+    fontSize: 15,
+    fontWeight: '500',
+    backgroundColor: '#FFF',
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
   listeningHint: {
     color: '#9CA3AF',
-    fontSize: 12,
+    fontSize: 13,
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  listeningExamples: {
+    color: '#B0B0B0',
+    fontSize: 11,
+    textAlign: 'center',
     marginTop: 4,
   },
   errorBox: {
