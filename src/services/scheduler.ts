@@ -93,12 +93,12 @@ export function generateProposal(tasks: Task[], freeSlots: FreeSlot[]): Proposal
           end: fixedEnd.toISOString(),
           warning: warnings.length > 0 ? warnings.join('。') : undefined,
         });
-        // Consume the slot if possible
+        // Consume the slot: split into before + after parts
         const slotIdx = remainingSlots.findIndex(
           (s) => s.start <= fixedStart && s.end >= fixedEnd
         );
         if (slotIdx >= 0) {
-          shrinkSlot(remainingSlots, slotIdx, fixedEnd);
+          splitSlot(remainingSlots, slotIdx, fixedStart, fixedEnd);
         }
         placed = true;
       }
@@ -209,6 +209,31 @@ function shrinkSlot(
       durationMinutes: remaining,
     };
   }
+}
+
+// Split a slot around a placed task (preserves both before and after parts)
+function splitSlot(
+  slots: { start: Date; end: Date; durationMinutes: number }[],
+  idx: number,
+  placedStart: Date,
+  placedEnd: Date
+) {
+  const slot = slots[idx];
+  const newSlots: { start: Date; end: Date; durationMinutes: number }[] = [];
+
+  // Part before the placed task
+  const beforeMinutes = (placedStart.getTime() - slot.start.getTime()) / 60000;
+  if (beforeMinutes >= 15) {
+    newSlots.push({ start: slot.start, end: placedStart, durationMinutes: beforeMinutes });
+  }
+
+  // Part after the placed task
+  const afterMinutes = (slot.end.getTime() - placedEnd.getTime()) / 60000;
+  if (afterMinutes >= 15) {
+    newSlots.push({ start: placedEnd, end: slot.end, durationMinutes: afterMinutes });
+  }
+
+  slots.splice(idx, 1, ...newSlots);
 }
 
 // Find a forced placement slot when no free slots are available
