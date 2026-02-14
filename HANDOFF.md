@@ -1,5 +1,31 @@
 # AI Auto Scheduler - 引き継ぎ資料
 
+## 0. ★★★ 最優先で読むこと ★★★
+
+### 前任AIの失敗と教訓
+
+前任のClaude Codeセッションは以下の失敗をした：
+
+1. **ブラウザキャッシュ問題を解決できなかった** — `npx expo export --platform web` でビルドし `node serve.js` で配信しているが、ブラウザが古いJSバンドルをキャッシュし続け、ソースコードの変更が一度もブラウザに反映されなかった。no-cacheヘッダー、ファイル名変更、Clear-Site-Dataヘッダー、サービスワーカー解除スクリプト等を試したが全て失敗。
+2. **ユーザーの要望を聞かず反論した** — ユーザーが「日付表示がわかりにくい、今日・明日ラベルをやめて日付のみにしろ」と指示したのに、「計算は正しい」と反論して修正を後回しにした。
+3. **Chromeの翻訳機能に気づかなかった** — ユーザーのブラウザでGoogle翻訳（英語→日本語）が有効になっている。これが表示に影響している可能性がある。
+
+### 次のAIがまずやるべきこと
+
+**`npx expo start --web --port 8081 --clear` を使え。`serve.js` は使うな。**
+
+Expo開発サーバーならホットリロードでコード変更が即座に反映される。`serve.js` + `npx expo export` の静的配信はブラウザキャッシュ問題で詰んだ。
+
+```bash
+# サーバー起動
+npx expo start --web --port 8081 --clear
+
+# ブラウザで http://localhost:8081 を開く
+# コード変更は自動反映される
+```
+
+---
+
 ## 1. プロジェクト概要
 
 **目的**: タスクをテキスト入力 → AIが所要時間・優先度・締切を推定 → Googleカレンダーの空き時間に自動配置するWebアプリ
@@ -27,60 +53,73 @@ EXPO_PUBLIC_AI_API_KEY=AIzaSyB_qOiQX_rJ_CFZu3nFSGMZ5CenMXNFihE
 
 ---
 
-## 3. ★最重要: 配信方法とビルドの問題
+## 3. 未解決の問題（修正必須）
 
-### 現在の配信方法
-```bash
-npx expo export --platform web   # → dist/ にビルド出力
-node serve.js                     # → dist/ から http://localhost:8081 で配信
-```
+### 問題1: ソースコードの変更がブラウザに反映されない（最重要）
 
-### ★ 致命的な問題: dist/ が古い
-- `dist/` のJSバンドルは **2026-02-13 22:59 UTC** のビルド
-- ソースコード (`src/`) は修正済みだが、**リビルドされていない**
-- **ユーザーが見ているのは古い dist/ のコード**
+**状態**: ソースコード(`src/`)は修正済みだが、ブラウザでは古いコードが動いている。
 
-### 修正手順
-```bash
-# 1. リビルド
-npx expo export --platform web
+**ソースには存在するがブラウザに反映されていない機能**:
+- 黄色バナー「BUILD v2 2026-02-14 | 新コード実行中」（DashboardScreen.tsx 231-235行）
+- 過去イベントの薄表示（opacity: 0.55）+ 「済」バッジ
+- 現在進行中イベントの青ボーダー + 「進行中」バッジ
+- 赤い現在時刻インジケーター線
+- サマリーヒント「3件終了 ・ 残り2件」
+- 未配置タスク通知バナー（オレンジ）
+- セクション見出しの「今日」「明日」ラベル削除（日付のみ表示に変更済み）
 
-# 2. サーバー再起動
-# (既存のserve.jsプロセスを停止してから)
-node serve.js
+**ビルド済みdist/のJSバンドル**: `dist/_expo/static/js/web/index-d2b2edde3ec51f89e88a2ed364361cc9.js`
+- このファイルには新コード（黄色バナー等）が含まれている（grep確認済み）
+- しかしブラウザが古いキャッシュを使い続ける
 
-# 3. ブラウザでハードリロード (Ctrl+Shift+R)
-```
+**推奨解決策**: `npx expo start --web --port 8081 --clear` でExpo開発サーバーを使う
 
-### 代替: Expo dev server で開発
-```bash
-npx expo start --web --port 8081 --clear
-```
-`--clear` はMetroバンドラーのキャッシュクリア。コード変更が反映されない場合に必須。
+### 問題2: 日付セクションの表示
+
+**ユーザーの要望**: 「今日」「明日」ラベル不要。日付のみ表示。
+
+**ソースコードの現在の状態**（修正済み）:
+- `DashboardScreen.tsx` 316行: `<Text>{todayStr}</Text>` （「今日 - 」削除済み）
+- `DashboardScreen.tsx` 356行: `<Text>{tomorrowStr}</Text>` （「明日 - 」削除済み）
+- `todayStr` = `toLocaleDateString('ja-JP', { month: 'long', day: 'numeric', weekday: 'short', timeZone: 'Asia/Tokyo' })` → 例: "2月14日(土)"
+
+**ブラウザではまだ旧表示**（「今日〜2月14日(土)」のまま）。問題1の解決が先。
+
+### 問題3: Google翻訳の干渉
+
+ユーザーのChromeで「英語を常に翻訳」が有効。ページの日本語テキストや記号が翻訳機能により変換されている可能性がある（例: " - " → "〜"）。対策として、HTMLの`<html lang="ja">`を設定して翻訳を抑制することを検討。
+
+### 問題4: 「〜時からXXする」の解釈問題
+
+**症状**: 「今日の9時からトレーニングをします」→ AIが deadline を `"2026-02-14T09:00:00"` に設定
+
+**問題**: ユーザーは「9時に開始」を意図しているが、スケジューラは「9時までに完了」として扱う。
+
+**修正案**: AIプロンプトに「〜からXXする」パターンの場合、deadlineではなく開始時刻（preferred_start_time）として扱うルールを追加。
 
 ---
 
-## 4. ファイル構成と各ファイルの役割
+## 4. ファイル構成
 
 ```
 ai-auto-scheduler/
 ├── App.tsx                          # エントリ。ErrorBoundary → AuthProvider → AppRouter
 ├── index.ts                         # registerRootComponent(App)
-├── serve.js                         # dist/配信用 no-cache 静的サーバー (port 8081)
+├── serve.js                         # dist/配信用 no-cache 静的サーバー (port 8081) ※使わないこと
 ├── .env                             # 環境変数 (3つ)
 └── src/
     ├── types/index.ts               # 全型定義 (Task, CalendarEvent, Proposal等)
     ├── utils/
-    │   ├── timezone.ts              # ★ JST固定タイムゾーンユーティリティ（最近追加）
+    │   ├── timezone.ts              # ★ JST固定タイムゾーンユーティリティ
     │   └── envCheck.ts              # 起動時に環境変数チェック
     ├── contexts/AuthContext.tsx      # Google OAuth認証、トークン管理、localStorage永続化
     ├── services/
     │   ├── ai.ts                    # Gemini/Claude API呼び出し、タスク解析、JSONパース
     │   ├── calendar.ts              # Google Calendar API (CRUD + freeBusy + 空き時間計算)
-    │   └── scheduler.ts             # 空き時間にタスクを配置するアルゴリズム (AIではない)
+    │   └── scheduler.ts             # 空き時間にタスクを配置するアルゴリズム
     ├── screens/
     │   ├── LoginScreen.tsx          # Googleログインボタン
-    │   ├── DashboardScreen.tsx      # 今日・明日の予定表示 + 未配置タスク一覧
+    │   ├── DashboardScreen.tsx      # ★日付セクション + 予定表示 + 未配置タスク一覧
     │   ├── TaskInputScreen.tsx      # テキスト入力 + 音声入力(Web Speech API) + AI解析
     │   ├── ProposalScreen.tsx       # 配置提案表示 → 承認 → カレンダー登録
     │   └── SettingsScreen.tsx       # 設定画面
@@ -101,11 +140,6 @@ LoginScreen → DashboardScreen → TaskInputScreen → ProposalScreen → Dashb
                SettingsScreen                   承認 → カレンダー登録
 ```
 
-1. **TaskInputScreen**: ユーザーがタスクを自然言語入力
-2. **ai.ts**: AI がタスクを解析し `Task[]` を返す
-3. **ProposalScreen**: scheduler.ts がカレンダーの空きスロットにタスクを配置
-4. ユーザー承認 → calendar.ts でGoogleカレンダーにイベント作成
-
 ---
 
 ## 6. スケジューラの仕様 (`scheduler.ts`)
@@ -118,73 +152,9 @@ Pass 2: 締切を無視して空きスロットに配置 + 警告
 Pass 3: 空きがなくてもダブルブッキングで強制配置 + 警告
 ```
 
-`generateProposal()` は常に `{ events: [...全タスク配置...], unassigned: [] }` を返す。
-
 ---
 
-## 7. ★ 現在のバグ（未解決）
-
-### バグA: 提案画面で「未割当タスク」が表示され配置されない
-
-**症状**:
-- 「今日の9時からトレーニングをします」を入力
-- 提案画面に「未割当タスク（N件）」と表示
-- 「締切り（2026/2/14）まで十分な連続空き時間はありません。」というメッセージ
-- ダブりOKの仕様なのに配置されていない
-
-**重大な手がかり**:
-- 「締切り（2026/2/14）まで十分な連続空き時間はありません。」というメッセージは **現在の src/ にも dist/ にも存在しない**
-  ```bash
-  grep -r "十分な" src/   → ヒットなし
-  grep -r "連続空き" src/ → ヒットなし
-  grep -r "未割当タスク" src/ → ヒットなし
-  ```
-- 現在の `ProposalScreen.tsx` は `proposal.unassigned` を表示するUIを持っていない
-- 現在の `scheduler.ts` は常に `unassigned: []` を返す
-
-**考えられる原因**:
-1. **dist/ が古いビルド（最有力）**: dist/ のバンドルは 2/13 ビルド。以前のバージョンのコードには「未割当タスク」表示と「十分な連続空き時間」メッセージが存在した可能性大。コミット `3643ab5`（締切超過時のフォールバック配置 - 未割当ではなく最短空き枠に配置+警告表示）で修正されたが、**dist/ がリビルドされていない**
-2. **Expoキャッシュ**: `.expo/` にキャッシュが残っている可能性
-3. **Metroバンドラーキャッシュ**: dev server使用時にメモリ内に古いモジュールがキャッシュ
-
-**最初にやるべきこと**:
-```bash
-rm -rf dist/
-npx expo export --platform web
-node serve.js
-# ブラウザで Ctrl+Shift+R
-```
-
-### バグB: タイムゾーン（修正済み・リビルド待ち）
-
-**症状**: 「今日」と入力すると、前日の日付がAIに送信される（JST 2/14 8:07 → UTC 2/13 23:07 → 「今日=2/13」）
-
-**原因**: 全ファイルで `new Date()` がシステムUTCを使用
-
-**修正済み（src/のみ、dist/未反映）**:
-- `src/utils/timezone.ts` を新規作成（JSTユーティリティ）
-- `ai.ts`, `calendar.ts`, `scheduler.ts`, `DashboardScreen.tsx`, `ProposalScreen.tsx` をJST固定に修正
-- コミット: `ee842bf`, `354b50d`
-
-### バグC: 「〜時から」の解釈問題
-
-**症状**: 「今日の9時からトレーニングをします」→ AIが deadline を `"2026-02-14T09:00:00"` に設定
-
-**問題**: ユーザーは「9時に開始」を意図しているが、スケジューラは「9時までに完了」として扱う。9時前に60分の空きがないと配置できない。
-
-**修正案**: AIプロンプトに「〜からXXする」パターンの場合、deadlineではなく開始時刻（preferred_start_time）として扱うルールを追加。または ProposalEvent に start_time_fixed フラグを追加し、スケジューラが開始時刻を固定して配置。
-
-### バグD: sortTasks内のnew Date()
-
-**場所**: `scheduler.ts` 33行目
-```typescript
-const diff = new Date(a.deadline).getTime() - new Date(b.deadline).getTime();
-```
-`parseAsJST()` を使うべき。タイムゾーンなしのISO文字列がUTCとして解釈される。
-
----
-
-## 8. timezone.ts ユーティリティ（最近追加）
+## 7. timezone.ts ユーティリティ
 
 ```typescript
 nowJST()          // 現在のJST日時コンポーネント + todayISO + startOfDay
@@ -194,74 +164,27 @@ toISODateString(y,m,d)     // "YYYY-MM-DD"文字列生成
 parseAsJST(s)              // AI出力のdatetime文字列をJSTとしてパース
 ```
 
----
-
-## 9. AIプロンプト (`ai.ts`)
-
-- `buildSystemPrompt()` で動的に生成
-- 今日/明日/来週月曜日の日付をJSTで計算して埋め込む
-- 入力パターン: 「今日の15時」「明日まで」「金曜日まで」「急ぎ」等
-- 出力: JSON配列 `[{name, duration_minutes, deadline, priority, preferred_time, reasoning}]`
-- パース: markdownコードフェンス除去 → JSON.parse → バリデーション
+**重要**: 全日付計算は `timezone.ts` のユーティリティを使うこと。`new Date()` を直接使わないこと。
 
 ---
 
-## 10. 型定義 (`src/types/index.ts`)
-
-```typescript
-interface Task {
-  id: string;
-  raw: string;           // ユーザーの元入力
-  name: string;          // AIが整理したタスク名
-  duration_minutes: number;
-  deadline: string | null;      // ISO string
-  priority: '高' | '中' | '低';
-  preferred_time: '午前' | '午後' | '夜' | null;
-  status: 'unassigned' | 'scheduled';
-  reasoning: string;
-}
-
-interface Proposal {
-  events: ProposalEvent[];      // 配置されたタスク
-  unassigned: UnassignedTask[]; // 未配置タスク（現仕様では常に空）
-}
-
-interface UnassignedTask {
-  taskId: string;
-  reason: string;
-}
-```
-
----
-
-## 11. Git履歴（関連コミット・新しい順）
+## 8. Git履歴（関連コミット・新しい順）
 
 | コミット | 内容 |
 |---|---|
-| `354b50d` | fix: 全日付表示をJST固定に修正（表示タイムゾーンバグ修正）|
-| `ee842bf` | fix: 全日付計算をJST固定に修正（タイムゾーンバグ修正）|
-| `a05291a` | feat: add no-cache static server (serve.js) |
-| `d5e1616` | fix: 稼働時間を0-24時（終日）に変更 |
-| `0439c9a` | fix: スケジューラー根本改修 - 常に全タスク配置、手動時刻変更対応 |
-| `3643ab5` | fix: 締切超過時のフォールバック配置 - 未割当ではなく最短空き枠に配置+警告表示 |
-| `6598fd5` | fix: AIプロンプトの日付をUTCからローカル時間ベースに修正 |
+| `4b20ff1` | serve.jsにClear-Site-Dataヘッダーとサービスワーカー解除を追加 |
+| `b08483f` | セクション見出しから「今日」「明日」を削除し日付のみ表示 |
+| `1eaf8a9` | revert: serve.js ポートを8081に戻す |
+| `4d22415` | feat: ダッシュボードの時間認識表示 + タスク永続化 |
+| `354b50d` | fix: 全日付表示をJST固定に修正 |
+| `ee842bf` | fix: 全日付計算をJST固定に修正 |
+| `3643ab5` | fix: 締切超過時のフォールバック配置 |
 
 ---
 
-## 12. 次のAIへの推奨アクション（優先順）
-
-1. **`npx expo export --platform web` でリビルドし `node serve.js` 再起動** → これだけで「未割当タスク」バグが解消する可能性が高い
-2. リビルド後も問題が続く場合、ブラウザのDevToolsで実際に読み込まれているJSバンドルを確認
-3. 「〜時からXXする」パターンで deadline ではなく開始時刻として扱う仕様をAIプロンプト・スケジューラに追加
-4. `scheduler.ts` の `sortTasks()` 内の `new Date(a.deadline)` を `parseAsJST()` に修正
-5. Expo dev server (`npx expo start --web --clear`) での開発を推奨（ホットリロードで即座に反映）
-
----
-
-## 13. Google OAuth設定
+## 9. Google OAuth設定
 
 - Client ID: `472887512782-ss2q5s9uhim0h1j62rqtua5kdt6ns01g.apps.googleusercontent.com`
-- Redirect URI: Expoが自動生成
 - Response Type: Token (implicit flow)
 - PKCE: 無効 (`usePKCE: false`)
 - Scopes: `openid`, `profile`, `email`, `calendar`, `calendar.events`
@@ -269,10 +192,19 @@ interface UnassignedTask {
 
 ---
 
-## 14. 設計上の注意点
+## 10. 設計上の注意点
 
 - **Expo Router未使用**: `src/screens/` に画面を配置、`App.tsx` のswitch文でルーティング
 - **状態はApp.tsxで一元管理**: `tasks` 配列と `screen` 文字列がトップレベル
 - **AIレスポンスのパース**: markdownコードフェンス対応、greedy/non-greedyの2段階JSON抽出
 - **Web固有対応**: `Platform.OS === 'web'` で分岐。datetime-local入力は `React.createElement('input')` で直接HTML要素を生成
-- **タイムゾーン**: 全日付計算は `src/utils/timezone.ts` のJST固定ユーティリティを使用すること。`new Date()` を直接使わないこと
+- **ユーザーのブラウザ**: Chrome (MacBook)、Google翻訳が有効
+
+---
+
+## 11. ユーザーへの対応について
+
+- ユーザーは技術者ではない。「計算が正しい」等の技術的な反論は不要
+- 「わかりにくい」と言われたらすぐ直すこと
+- コード変更後は必ずブラウザで反映されたことを確認してから「完了」と報告すること
+- 反映されない場合は「完了」と言わず、配信方法の問題を先に解決すること
