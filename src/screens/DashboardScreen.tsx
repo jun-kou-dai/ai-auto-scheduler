@@ -218,8 +218,22 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
     setExpandedTaskId(null);
   };
 
+  // Diagnostic: change browser tab title (no Console needed)
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      document.title = 'DASHBOARD v2 BUILD 2026-02-14';
+    }
+  }, []);
+
   return (
     <View style={styles.container}>
+      {/* Build signature - ALWAYS visible, before any conditional */}
+      <View style={{ backgroundColor: '#FBBF24', padding: 8, zIndex: 9999 }}>
+        <Text style={{ color: '#000', fontSize: 14, fontWeight: '700', textAlign: 'center' }}>
+          BUILD v2 2026-02-14 | 新コード実行中
+        </Text>
+      </View>
+
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
