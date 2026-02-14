@@ -313,7 +313,7 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
             {/* Today */}
             <View style={styles.section}>
               <View style={styles.sectionTitleRow}>
-                <Text style={styles.sectionTitle}>今日 - {todayStr}</Text>
+                <Text style={styles.sectionTitle}>{todayStr}</Text>
                 <Text style={styles.currentTimeText}>{currentTimeStr}</Text>
               </View>
               {todayEvents.length > 0 && (
@@ -353,7 +353,7 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
 
             {/* Tomorrow */}
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>明日 - {tomorrowStr}</Text>
+              <Text style={styles.sectionTitle}>{tomorrowStr}</Text>
               {tomorrowEvents.length > 0 && (
                 <Text style={styles.sectionHint}>タップで詳細・編集</Text>
               )}
