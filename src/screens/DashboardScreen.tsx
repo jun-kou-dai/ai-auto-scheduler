@@ -42,8 +42,19 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
   // Current time state (updates every 30 seconds for time-aware display)
   const [now, setNow] = useState(new Date());
 
+  // Diagnostic: confirm new code is running (remove after debugging)
+  useEffect(() => {
+    console.log('[Dashboard v2] 時間認識表示コード実行中', {
+      now: now.toISOString(),
+      buildTime: '2026-02-14-fix1',
+    });
+  }, []);
+
   const fetchEvents = useCallback(async () => {
-    if (!accessToken) return;
+    if (!accessToken) {
+      setLoading(false);
+      return;
+    }
     try {
       setError(null);
       const evts = await getUpcomingEvents(accessToken);
@@ -109,12 +120,19 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
   // Event status helper (past / current / upcoming)
   const getEventStatus = (event: CalendarEvent): 'past' | 'current' | 'upcoming' => {
     // All-day events shown in today are always "current"
-    if (!event.start.dateTime && event.start.date) return 'current';
+    if (!event.start?.dateTime && event.start?.date) return 'current';
 
-    const start = new Date(event.start.dateTime || '');
-    const end = new Date(event.end.dateTime || '');
-    if (end.getTime() <= now.getTime()) return 'past';
-    if (start.getTime() <= now.getTime()) return 'current';
+    const startStr = event.start?.dateTime;
+    const endStr = event.end?.dateTime;
+    if (!startStr || !endStr) return 'upcoming';
+
+    const startMs = new Date(startStr).getTime();
+    const endMs = new Date(endStr).getTime();
+    if (isNaN(startMs) || isNaN(endMs)) return 'upcoming';
+
+    const nowTime = now.getTime();
+    if (endMs <= nowTime) return 'past';
+    if (startMs <= nowTime) return 'current';
     return 'upcoming';
   };
 
