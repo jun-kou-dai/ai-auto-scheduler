@@ -17,12 +17,17 @@ const MIME = {
 
 const server = http.createServer((req, res) => {
   // No-cache headers on EVERY response
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Expires', '0');
   res.setHeader('Surrogate-Control', 'no-store');
+  // Prevent service worker caching
+  res.setHeader('Service-Worker-Allowed', '/');
+  res.setHeader('Clear-Site-Data', '"cache", "storage"');
 
-  let filePath = path.join(DIST, req.url === '/' ? 'index.html' : req.url);
+  // Strip query string for file lookup
+  const urlPath = req.url.split('?')[0];
+  let filePath = path.join(DIST, urlPath === '/' ? 'index.html' : urlPath);
 
   // SPA fallback: if file doesn't exist, serve index.html
   if (!fs.existsSync(filePath)) {
