@@ -30,7 +30,7 @@ function sortTasks(tasks: Task[]): Task[] {
   return [...tasks].sort((a, b) => {
     // 1. Deadline closer first (null = no deadline = later)
     if (a.deadline && b.deadline) {
-      const diff = new Date(a.deadline).getTime() - new Date(b.deadline).getTime();
+      const diff = parseAsJST(a.deadline).getTime() - parseAsJST(b.deadline).getTime();
       if (diff !== 0) return diff;
     } else if (a.deadline && !b.deadline) {
       return -1;
@@ -73,6 +73,39 @@ export function generateProposal(tasks: Task[], freeSlots: FreeSlot[]): Proposal
     let placed = false;
     const deadlineDate = normalizeDeadline(task.deadline);
 
+    // === preferred_start: 「9時から」等の固定開始時刻 → その時刻に配置 ===
+    if (task.preferred_start) {
+      const fixedStart = parseAsJST(task.preferred_start);
+      if (!isNaN(fixedStart.getTime())) {
+        const fixedEnd = new Date(fixedStart.getTime() + needed * 60000);
+        const warnings: string[] = [];
+        // Check if overlaps with busy time (no free slot covers this range)
+        const hasSlot = remainingSlots.some(
+          (s) => s.start <= fixedStart && s.end >= fixedEnd
+        );
+        if (!hasSlot) {
+          warnings.push('既存予定と重複する可能性があります');
+        }
+        events.push({
+          taskId: task.id,
+          title: task.name,
+          start: fixedStart.toISOString(),
+          end: fixedEnd.toISOString(),
+          warning: warnings.length > 0 ? warnings.join('。') : undefined,
+        });
+        // Consume the slot if possible
+        const slotIdx = remainingSlots.findIndex(
+          (s) => s.start <= fixedStart && s.end >= fixedEnd
+        );
+        if (slotIdx >= 0) {
+          shrinkSlot(remainingSlots, slotIdx, fixedEnd);
+        }
+        placed = true;
+      }
+    }
+
+    if (placed) continue;
+
     // Try preferred time slots first
     const prefRange = getPreferredHourRange(task.preferred_time);
 
@@ -80,7 +113,7 @@ export function generateProposal(tasks: Task[], freeSlots: FreeSlot[]): Proposal
     const scoredSlots = remainingSlots
       .map((slot, idx) => {
         let score = 0;
-        const slotHour = slot.start.getHours();
+        const slotHour = (slot.start.getUTCHours() + 9) % 24; // JST hour
         if (prefRange && slotHour >= prefRange[0] && slotHour < prefRange[1]) {
           score += 10;
         }

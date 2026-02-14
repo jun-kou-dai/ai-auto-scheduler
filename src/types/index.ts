@@ -10,6 +10,7 @@ export interface Task {
   name: string;
   duration_minutes: number; // default 60
   deadline: string | null; // ISO string or null
+  preferred_start: string | null; // ISO string: 「9時から」→ 固定開始時刻
   priority: Priority;
   preferred_time: PreferredTime;
   status: TaskStatus;

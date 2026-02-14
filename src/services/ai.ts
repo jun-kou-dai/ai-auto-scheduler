@@ -10,6 +10,7 @@ interface AITaskResult {
   name: string;
   duration_minutes: number;
   deadline: string | null;
+  preferred_start: string | null;
   priority: '高' | '中' | '低';
   preferred_time: '午前' | '午後' | '夜' | null;
   reasoning: string;
@@ -39,6 +40,7 @@ function buildSystemPrompt(): string {
   "name": "タスク名",
   "duration_minutes": 所要時間（分、数値）,
   "deadline": "締切日時（ISO 8601形式）またはnull",
+  "preferred_start": "開始希望日時（ISO 8601形式）またはnull",
   "priority": "高" or "中" or "低",
   "preferred_time": "午前" or "午後" or "夜" or null,
   "reasoning": "この推定の根拠（1-2文で簡潔に）"
@@ -62,12 +64,23 @@ function buildSystemPrompt(): string {
 - 「来週」「来週まで」→ deadline: "${nextMondayISO}T23:59:00"
 - 「金曜まで」「金曜日まで」→ その週の金曜日を計算してdeadlineに設定
 
-時刻の変換（具体的な時刻が指定された場合）:
-- 「今日の15時」「今日15時」→ deadline: "${todayISO}T15:00:00"
-- 「明日の10時」「明日10時」→ deadline: "${tomorrowISO}T10:00:00"
-- 「9時」「9時まで」→ deadline: "${todayISO}T09:00:00"
-- 「午後3時」→ deadline: 当日または翌日のT15:00:00
-- 「夕方6時」→ deadline: 当日のT18:00:00
+=== 「〜から」と「〜まで」の区別（最重要） ===
+「〜からXXする」「〜時にXXする」→ 開始時刻の指定。preferred_startに設定し、deadlineはnull。
+「〜までにXXする」「〜まで」→ 締切の指定。deadlineに設定し、preferred_startはnull。
+
+例:
+- 「今日の9時からトレーニング」→ preferred_start: "${todayISO}T09:00:00", deadline: null
+- 「明日10時からミーティング」→ preferred_start: "${tomorrowISO}T10:00:00", deadline: null
+- 「15時に会議」→ preferred_start: "${todayISO}T15:00:00", deadline: null
+- 「今日の15時まで」「15時までに」→ deadline: "${todayISO}T15:00:00", preferred_start: null
+- 「9時まで」→ deadline: "${todayISO}T09:00:00", preferred_start: null
+
+時刻の変換（「〜まで」パターン = 締切）:
+- 「今日の15時まで」「今日15時まで」→ deadline: "${todayISO}T15:00:00"
+- 「明日の10時まで」→ deadline: "${tomorrowISO}T10:00:00"
+- 「9時まで」→ deadline: "${todayISO}T09:00:00"
+- 「午後3時まで」→ deadline: 当日または翌日のT15:00:00
+- 「夕方6時まで」→ deadline: 当日のT18:00:00
 
 時間帯の変換:
 - 「朝」「午前中」「朝やりたい」→ preferred_time: "午前"
@@ -136,6 +149,7 @@ function validateTaskResult(item: any): AITaskResult {
         ? item.duration_minutes
         : 60,
     deadline: typeof item.deadline === 'string' ? item.deadline : null,
+    preferred_start: typeof item.preferred_start === 'string' ? item.preferred_start : null,
     priority:
       item.priority === '高' || item.priority === '中' || item.priority === '低'
         ? item.priority
@@ -278,6 +292,7 @@ export async function analyzeTasks(rawInput: string): Promise<Task[]> {
     name: result.name,
     duration_minutes: result.duration_minutes,
     deadline: result.deadline,
+    preferred_start: result.preferred_start,
     priority: result.priority,
     preferred_time: result.preferred_time,
     status: 'unassigned',

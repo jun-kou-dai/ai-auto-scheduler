@@ -272,6 +272,7 @@ export function ProposalScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
                         <Text style={styles.proposalDuration}>
                           {task ? `${task.duration_minutes}分` : ''}
                           {task?.preferred_time ? ` | ${task.preferred_time}希望` : ''}
+                          {task?.preferred_start ? ` | 開始: ${new Date(task.preferred_start).toLocaleTimeString('ja-JP', { timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit' })}` : ''}
                           {task?.deadline ? ` | 締切: ${new Date(task.deadline).toLocaleDateString('ja-JP', { timeZone: 'Asia/Tokyo' })}` : ''}
                         </Text>
                         {evt.warning && (
