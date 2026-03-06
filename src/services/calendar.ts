@@ -241,11 +241,11 @@ export async function deleteCalendarEvent(
 // Create multiple events from proposal
 export async function createEventsFromProposal(
   accessToken: string,
-  events: { title: string; start: string; end: string }[]
+  events: { title: string; start: string; end: string; description?: string }[]
 ): Promise<CalendarEvent[]> {
   const results: CalendarEvent[] = [];
   for (const evt of events) {
-    const created = await createCalendarEvent(accessToken, evt.title, evt.start, evt.end);
+    const created = await createCalendarEvent(accessToken, evt.title, evt.start, evt.end, evt.description);
     results.push(created);
   }
   return results;

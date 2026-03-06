@@ -142,11 +142,15 @@ export function ProposalScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
     setError(null);
 
     try {
-      const eventsToCreate = proposal.events.map((e) => ({
-        title: e.title,
-        start: e.start,
-        end: e.end,
-      }));
+      const eventsToCreate = proposal.events.map((e) => {
+        const task = tasks.find((t) => t.id === e.taskId);
+        return {
+          title: e.title,
+          start: e.start,
+          end: e.end,
+          description: task?.description || undefined,
+        };
+      });
 
       await createEventsFromProposal(accessToken, eventsToCreate);
       setCreatedCount(eventsToCreate.length);

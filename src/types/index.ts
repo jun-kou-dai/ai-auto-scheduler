@@ -3,16 +3,19 @@
 export type Priority = '高' | '中' | '低';
 export type PreferredTime = '午前' | '午後' | '夜' | null;
 export type TaskStatus = 'unassigned' | 'scheduled';
+export type Category = '仕事' | '勉強' | '運動' | '家事' | '買い物' | 'その他';
 
 export interface Task {
   id: string;
   raw: string;
   name: string;
+  description: string; // 元の入力内容の要約
   duration_minutes: number; // default 60
   deadline: string | null; // ISO string or null
   preferred_start: string | null; // ISO string: 「9時から」→ 固定開始時刻
   priority: Priority;
   preferred_time: PreferredTime;
+  category: Category;
   status: TaskStatus;
   reasoning: string; // AI's reasoning for the estimates
 }

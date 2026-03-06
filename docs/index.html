@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en" translate="no">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="google" content="notranslate" />
+    <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+    <title>AI Auto Scheduler</title>
+    
+    <script>
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(function(r) {
+          r.forEach(function(reg) { reg.unregister(); });
+        });
+      }
+      if ('caches' in window) {
+        caches.keys().then(function(n) {
+          n.forEach(function(name) { caches.delete(name); });
+        });
+      }
+    </script>
+    <style id="expo-reset">
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        overflow: hidden;
+      }
+      #root {
+        display: flex;
+        height: 100%;
+        flex: 1;
+      }
+    </style>
+  <link rel="icon" href="./favicon.ico" /></head>
+
+  <body>
+    <noscript>
+      JavaScriptを有効にしてください。
+    </noscript>
+    <div id="root"></div>
+  <script src="./_expo/static/js/web/index-4baccb1c66038d4ae041b8ceed42ce63.js?v=mmf0bnzn" defer></script>
+</body>
+</html>

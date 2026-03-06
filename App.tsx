@@ -26,7 +26,15 @@ function getStoredTasks(): Task[] {
   try {
     if (typeof window !== 'undefined' && window.localStorage) {
       const stored = window.localStorage.getItem(STORAGE_KEY_TASKS);
-      if (stored) return JSON.parse(stored);
+      if (stored) {
+        const tasks = JSON.parse(stored);
+        // Migrate old tasks missing new fields
+        return tasks.map((t: any) => ({
+          ...t,
+          description: t.description || t.raw || t.name,
+          category: t.category || 'その他',
+        }));
+      }
     }
   } catch { /* ignore */ }
   return [];
