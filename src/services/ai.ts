@@ -20,6 +20,79 @@ interface AITaskResult {
 }
 
 // ============================================================
+// Title extraction: robust keyword extraction from voice input
+// ============================================================
+function extractTitle(input: string): string {
+  let t = input;
+
+  // 1. 時刻・日付表現を除去
+  t = t.replace(/(今日の?|明日の?|明後日の?|あさっての?|今から|今すぐ)/g, '');
+  t = t.replace(/(午後|午前|夕方|夜|朝)は?/g, '');
+  t = t.replace(/\d{1,2}時((\d{1,2})分|半)?(ごろ|頃)?(から|に|まで|までに)?/g, '');
+  t = t.replace(/\d{1,2}分間?/g, '');
+  t = t.replace(/\d{1,2}時間/g, '');
+
+  // 2. フィラー・接続詞除去
+  t = t.replace(/(えっと|えーと|まあ|ちょっと|なんか|やっぱり|とりあえず|一応)/g, '');
+  t = t.replace(/(なので|だから|ので|けど|けれど|から(?![\u3040-\u9fff]))/g, '|');
+
+  // 3. 文の区切りを「|」に変換
+  t = t.replace(/その後/g, '|');
+  t = t.replace(/、/g, '|');
+  t = t.replace(/(それから|それと|それで|そして|あと(?=\s)|あとは)/g, '|');
+
+  // 4. 文末動詞パターンを除去（区切り「|」に置換）
+  t = t.replace(/(を|に|が|は|で|と)?(行い|行な|おこない)ます/g, '|');
+  t = t.replace(/(を|に|が)?(します|しました|したい(です)?|するつもり|する予定|する(?![たてな]))/g, '|');
+  t = t.replace(/(を|に|が|は|で|と)?(行う|行った)(予定|つもり|こと)?/g, '|');
+  t = t.replace(/(に|へ|を)?(行きます|行きたい(です)?|行く|向かいます|向かう|出かけます|出かける)/g, '|');
+  t = t.replace(/(を|が)?(やります|やりたい(です)?|やる)/g, '|');
+  t = t.replace(/(を|が)?(始めます|始める|終わらせます|終わらせる|終えます|終える)/g, '|');
+  t = t.replace(/(を)?(浴びます|浴びる|浴びて)/g, '|');
+  t = t.replace(/(を)?(買います|買う|買いに)/g, '|');
+  t = t.replace(/(を)?(食べます|食べる|飲みます|飲む|読みます|読む|見ます|見る|聞きます|聞く|書きます|書く|作ります|作る|洗います|洗う)/g, '|');
+  t = t.replace(/(に)?(励み|励め|頑張り|頑張れ|取り組み|努め)(ます|ました)?/g, '|');
+  t = t.replace(/(ます|ました|ません)/g, '|');
+  t = t.replace(/(です|でした)/g, '|');
+
+  // 5. 区切りで分割してキーワード抽出
+  const segments = t.split('|');
+  const keywords: string[] = [];
+
+  for (let seg of segments) {
+    seg = seg.replace(/\s+/g, '').trim();
+    if (!seg) continue;
+
+    // 移動表現除去: 「職場に行って」→ 除去
+    seg = seg.replace(/.{1,6}(に行って|へ行って|に向かって|へ向かって)/g, '');
+
+    // 「〜て」接続を「・」に分割
+    seg = seg.replace(/(?<=[\u3040-\u9fff]{2,})て(?=[\u3040-\u9fff]{2,})/g, '・');
+
+    // 末尾の動詞語幹・て形を除去
+    seg = seg.replace(/(して|って|て)$/g, '');
+    seg = seg.replace(/(を|が)?(買い|売り|洗い|浴び|書き|読み|飲み|食べ|見|聞き|作り)$/g, '');
+
+    // 助詞+動詞語幹の残骸を除去
+    seg = seg.replace(/(を|に)(し|やり|行い|行ない|励み|頑張り|取り組み|努め)$/g, '');
+
+    // 末尾・先頭の助詞除去
+    seg = seg.replace(/(を|に|が|は|で|と|も|へ)$/g, '');
+    seg = seg.replace(/^(を|に|が|は|で|と|も|へ|の|それ|これ|あれ|ら|。|\s|、)+/g, '');
+
+    seg = seg.trim();
+    if (seg && seg.length > 0) {
+      keywords.push(seg);
+    }
+  }
+
+  // 重複除去
+  const unique = [...new Set(keywords)];
+  const result = unique.join(' / ');
+  return result || input.trim();
+}
+
+// ============================================================
 // Regex-based fallback parser (AI failure resilience)
 // ============================================================
 function createFallbackAnalysis(input: string): AITaskResult {
@@ -98,20 +171,8 @@ function createFallbackAnalysis(input: string): AITaskResult {
   else if (/午後|昼/.test(input)) preferredTime = '午後';
   else if (/夜|夕方/.test(input)) preferredTime = '夜';
 
-  // タイトル: 時刻・日付表現を除去してキーワードを抽出
-  let title = input;
-  title = title.replace(/(今日の?|明日の?|明後日の?|あさっての?|今から|今すぐ)/g, '');
-  title = title.replace(/(午後|午前|夕方|夜|朝)は?/g, '');
-  title = title.replace(/\d{1,2}時((\d{1,2})分|半)?(ごろ|頃)?(から|に|まで|までに)?/g, '');
-  title = title.replace(/\d{1,2}分間?/g, '');
-  title = title.replace(/\d{1,2}時間/g, '');
-  title = title.replace(/(を|に|が)?(します|しました|したい(です)?|する(つもり|予定)?)/g, '');
-  title = title.replace(/(に|へ)?(行きます|行く|向かいます)/g, '');
-  title = title.replace(/(を|が)?(やります|やる|やりたい)/g, '');
-  title = title.replace(/(ます|ました|ません|です|でした)/g, '');
-  title = title.replace(/(を|に|が|は|で|と|も|へ)$/g, '');
-  title = title.replace(/^\s+|\s+$/g, '').replace(/\s{2,}/g, ' ');
-  if (!title) title = input.trim();
+  // タイトル: 強力なキーワード抽出
+  const title = extractTitle(input);
 
   return {
     name: title,
