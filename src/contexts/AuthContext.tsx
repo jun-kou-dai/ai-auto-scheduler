@@ -84,10 +84,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const logoutCallbacksRef = useRef<(() => void)[]>([]);
 
-  // Build redirect URI for web
-  const redirectUri = AuthSession.makeRedirectUri({
-    scheme: 'ai-auto-scheduler',
-  });
+  // Build redirect URI for web — must include full path for GitHub Pages subpath
+  const redirectUri = typeof window !== 'undefined'
+    ? window.location.origin + window.location.pathname
+    : AuthSession.makeRedirectUri({ scheme: 'ai-auto-scheduler' });
 
   const [request, response, promptAsync] = AuthSession.useAuthRequest(
     {
