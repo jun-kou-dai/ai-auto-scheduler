@@ -84,9 +84,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const logoutCallbacksRef = useRef<(() => void)[]>([]);
 
-  // Build redirect URI for web — must include full path for GitHub Pages subpath
+  // Build redirect URI for web — match existing Google Cloud Console config
   const redirectUri = typeof window !== 'undefined'
-    ? window.location.origin + window.location.pathname
+    ? window.location.origin + window.location.pathname.replace(/\/$/, '')
     : AuthSession.makeRedirectUri({ scheme: 'ai-auto-scheduler' });
 
   const [request, response, promptAsync] = AuthSession.useAuthRequest(
