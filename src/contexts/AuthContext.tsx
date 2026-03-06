@@ -1,17 +1,18 @@
-// Phase B: Auth context with Google login (Web only)
-// Fixes: token persistence, request-ready check, onLogout callback
+// Auth context — direct redirect approach (same as ai-sukejuru, no Expo AuthSession popup)
 import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect, useRef } from 'react';
-import * as AuthSession from 'expo-auth-session';
-import * as WebBrowser from 'expo-web-browser';
 import { UserInfo } from '../types';
 
-WebBrowser.maybeCompleteAuthSession();
-
 const GOOGLE_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID || '';
+const SCOPES = 'openid profile email https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events';
 const STORAGE_KEY_TOKEN = 'ai_scheduler_access_token';
 const STORAGE_KEY_USER = 'ai_scheduler_user';
+const STORAGE_KEY_EXPIRES = 'ai_scheduler_token_expires';
 
-// Safe localStorage access (SSR-safe)
+function getRedirectUri(): string {
+  if (typeof window === 'undefined') return 'http://localhost:8081';
+  return window.location.origin + '/ai-auto-scheduler';
+}
+
 function getStoredValue(key: string): string | null {
   try {
     if (typeof window !== 'undefined' && window.localStorage) {
@@ -32,13 +33,6 @@ function setStoredValue(key: string, value: string | null): void {
     }
   } catch { /* ignore */ }
 }
-
-// Google OAuth discovery document
-const discovery: AuthSession.DiscoveryDocument = {
-  authorizationEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
-  tokenEndpoint: 'https://oauth2.googleapis.com/token',
-  revocationEndpoint: 'https://oauth2.googleapis.com/revoke',
-};
 
 interface AuthContextType {
   user: UserInfo | null;
@@ -66,62 +60,54 @@ export function useAuth() {
   return useContext(AuthContext);
 }
 
-// Restore user from localStorage
 function getRestoredUser(): UserInfo | null {
   const stored = getStoredValue(STORAGE_KEY_USER);
   if (stored) {
-    try {
-      return JSON.parse(stored);
-    } catch { /* ignore */ }
+    try { return JSON.parse(stored); } catch { /* ignore */ }
+  }
+  return null;
+}
+
+function getRestoredToken(): string | null {
+  const token = getStoredValue(STORAGE_KEY_TOKEN);
+  const expires = getStoredValue(STORAGE_KEY_EXPIRES);
+  if (token && expires && Date.now() < parseInt(expires, 10)) {
+    return token;
+  }
+  if (token) {
+    setStoredValue(STORAGE_KEY_TOKEN, null);
+    setStoredValue(STORAGE_KEY_EXPIRES, null);
+    setStoredValue(STORAGE_KEY_USER, null);
   }
   return null;
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserInfo | null>(getRestoredUser);
-  const [accessToken, setAccessToken] = useState<string | null>(() => getStoredValue(STORAGE_KEY_TOKEN));
+  const [accessToken, setAccessToken] = useState<string | null>(getRestoredToken);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const logoutCallbacksRef = useRef<(() => void)[]>([]);
 
-  // Build redirect URI for web — match existing Google Cloud Console config
-  const redirectUri = typeof window !== 'undefined'
-    ? window.location.origin + window.location.pathname.replace(/\/$/, '')
-    : AuthSession.makeRedirectUri({ scheme: 'ai-auto-scheduler' });
-
-  const [request, response, promptAsync] = AuthSession.useAuthRequest(
-    {
-      clientId: GOOGLE_CLIENT_ID,
-      scopes: [
-        'openid',
-        'profile',
-        'email',
-        'https://www.googleapis.com/auth/calendar',
-        'https://www.googleapis.com/auth/calendar.events',
-      ],
-      redirectUri,
-      responseType: AuthSession.ResponseType.Token,
-      usePKCE: false,
-    },
-    discovery
-  );
-
-  // Handle auth response
+  // Handle OAuth redirect on mount
   useEffect(() => {
-    if (response?.type === 'success') {
-      const { access_token } = response.params;
-      if (access_token) {
-        setAccessToken(access_token);
-        setStoredValue(STORAGE_KEY_TOKEN, access_token);
-        fetchUserInfo(access_token);
-      }
-    } else if (response?.type === 'error') {
-      setError(`ログインエラー: ${response.error?.message || '不明なエラー'}`);
-      setIsLoading(false);
-    } else if (response?.type === 'dismiss') {
-      setIsLoading(false);
+    if (typeof window === 'undefined') return;
+    const hash = window.location.hash;
+    if (!hash || !hash.includes('access_token')) return;
+
+    const params = new URLSearchParams(hash.substring(1));
+    const token = params.get('access_token');
+    const expiresIn = params.get('expires_in');
+
+    if (token && expiresIn) {
+      const expiresAt = Date.now() + parseInt(expiresIn, 10) * 1000;
+      setAccessToken(token);
+      setStoredValue(STORAGE_KEY_TOKEN, token);
+      setStoredValue(STORAGE_KEY_EXPIRES, String(expiresAt));
+      fetchUserInfo(token);
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
     }
-  }, [response]);
+  }, []);
 
   // Validate restored token on mount
   useEffect(() => {
@@ -131,19 +117,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const fetchUserInfo = useCallback(async (token: string) => {
+    setIsLoading(true);
     try {
       const res = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) {
-        // Token expired or invalid — clear it
         if (res.status === 401) {
           setAccessToken(null);
           setUser(null);
           setStoredValue(STORAGE_KEY_TOKEN, null);
           setStoredValue(STORAGE_KEY_USER, null);
+          setStoredValue(STORAGE_KEY_EXPIRES, null);
           setError('セッションが期限切れです。再度ログインしてください。');
-          setIsLoading(false);
           return;
         }
         throw new Error(`ユーザー情報取得失敗 (${res.status})`);
@@ -165,19 +151,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = useCallback(async () => {
-    if (!request) {
-      setError('認証の準備中です。少し待ってから再度お試しください。');
-      return;
-    }
-    setIsLoading(true);
-    setError(null);
-    try {
-      await promptAsync();
-    } catch (err) {
-      setError(`ログイン開始エラー: ${err instanceof Error ? err.message : String(err)}`);
-      setIsLoading(false);
-    }
-  }, [promptAsync, request]);
+    const params = new URLSearchParams({
+      client_id: GOOGLE_CLIENT_ID,
+      redirect_uri: getRedirectUri(),
+      response_type: 'token',
+      scope: SCOPES,
+      prompt: 'consent',
+    });
+    window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+  }, []);
 
   const logout = useCallback(() => {
     setUser(null);
@@ -185,7 +167,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setError(null);
     setStoredValue(STORAGE_KEY_TOKEN, null);
     setStoredValue(STORAGE_KEY_USER, null);
-    // Call registered logout callbacks
+    setStoredValue(STORAGE_KEY_EXPIRES, null);
     for (const cb of logoutCallbacksRef.current) {
       try { cb(); } catch { /* ignore */ }
     }
@@ -201,7 +183,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user,
         accessToken,
         isLoading,
-        isReady: !!request,
+        isReady: true,
         error,
         login,
         logout,
