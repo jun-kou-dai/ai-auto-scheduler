@@ -25,12 +25,14 @@ interface AITaskResult {
 function extractTitle(input: string): string {
   let t = input;
 
-  // 1. 時刻・日付表現を除去
+  // 1. 時刻・日付表現を除去（順序重要: 所要時間→時刻の順で除去）
   t = t.replace(/(今日の?|明日の?|明後日の?|あさっての?|今から|今すぐ)/g, '');
   t = t.replace(/(午後|午前|夕方|夜|朝)は?/g, '');
-  t = t.replace(/\d{1,2}時((\d{1,2})分|半)?(ごろ|頃)?(から|に|まで|までに)?/g, '');
+  // 所要時間を先に除去（「1時間30分」→「1時」が時刻扱いされるのを防ぐ）
+  t = t.replace(/\d{1,2}時間(\d{1,2}分)?/g, '');
   t = t.replace(/\d{1,2}分間?/g, '');
-  t = t.replace(/\d{1,2}時間/g, '');
+  // 時刻表現を除去（「9時に」「10時から」等）
+  t = t.replace(/\d{1,2}時((\d{1,2})分|半)?(ごろ|頃)?(から|に|まで|までに)?/g, '');
 
   // 2. フィラー・接続詞除去
   t = t.replace(/(えっと|えーと|まあ|ちょっと|なんか|やっぱり|とりあえず|一応)/g, '');
@@ -66,8 +68,17 @@ function extractTitle(input: string): string {
     // 移動表現除去: 「職場に行って」→ 除去
     seg = seg.replace(/.{1,6}(に行って|へ行って|に向かって|へ向かって)/g, '');
 
-    // 「〜て」接続を「・」に分割
-    seg = seg.replace(/(?<=[\u3040-\u9fff]{2,})て(?=[\u3040-\u9fff]{2,})/g, '・');
+    // 「〜て」接続を分割して各部分を処理
+    const teParts = seg.split(/(?<=[\u3040-\u9fff]{2,})て(?=[\u3040-\u9fff]{2,})/);
+    if (teParts.length > 1) {
+      const cleanedParts: string[] = [];
+      for (let part of teParts) {
+        // 「Xする」系の動詞語幹を除去（「出発し」→「出発」「練習し」→「練習」）
+        part = part.replace(/(?<=[\u4e00-\u9fff]{2,})し$/g, '');
+        if (part && part.length > 0) cleanedParts.push(part);
+      }
+      seg = cleanedParts.join(' / ');
+    }
 
     // 末尾の動詞語幹・て形を除去
     seg = seg.replace(/(して|って|て)$/g, '');
