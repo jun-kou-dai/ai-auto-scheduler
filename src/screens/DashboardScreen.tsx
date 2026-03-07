@@ -134,6 +134,21 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
     return () => clearInterval(timer);
   }, [accessToken, fetchEvents]);
 
+  // Section navigation for week bar scroll
+  const [selectedDay, setSelectedDay] = useState(0);
+
+  const scrollToSection = useCallback((key: string) => {
+    // Use setTimeout to ensure scroll happens after React re-render completes
+    setTimeout(() => {
+      if (typeof document !== 'undefined') {
+        const el = document.querySelector(`[data-section="${key}"]`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }
+    }, 50);
+  }, []);
+
   // Auto-scroll to current time in the timeline when events first load
   const hasAutoScrolled = useRef(false);
   useEffect(() => {
@@ -146,7 +161,7 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
       const scrollTarget = timelineY + (currentHour - START_HOUR) * HOUR_HEIGHT - 120;
       setTimeout(() => {
         scrollRef.current?.scrollTo({ y: Math.max(0, scrollTarget), animated: false });
-      }, 50);
+      }, 100);
     }
   }, [loading, timelineY]);
 
@@ -176,7 +191,7 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
   });
 
   // Build upcoming days (day+2 through day+6)
-  const upcomingDays: { label: string; events: CalendarEvent[] }[] = [];
+  const upcomingDays: { label: string; events: CalendarEvent[]; offset: number }[] = [];
   for (let offset = 2; offset <= 6; offset++) {
     const dayStart = jstToDate(jst.year, jst.month, jst.day + offset);
     const dayEnd = jstToDate(jst.year, jst.month, jst.day + offset + 1);
@@ -184,10 +199,8 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
       const t = new Date(e.start.dateTime || e.start.date || '').getTime();
       return t >= dayStart.getTime() && t < dayEnd.getTime();
     });
-    if (dayEvents.length > 0) {
-      const label = dayStart.toLocaleDateString('ja-JP', { month: 'long', day: 'numeric', weekday: 'short', timeZone: 'Asia/Tokyo' });
-      upcomingDays.push({ label, events: dayEvents });
-    }
+    const label = dayStart.toLocaleDateString('ja-JP', { month: 'long', day: 'numeric', weekday: 'short', timeZone: 'Asia/Tokyo' });
+    upcomingDays.push({ label, events: dayEvents, offset });
   }
 
   // Event status helper (past / current / upcoming)
@@ -328,6 +341,13 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
         </View>
       </View>
 
+      {/* Week Bar - Sticky above scroll */}
+      {!loading && (
+        <View style={styles.weekBarContainer}>
+          <WeekBar events={events} today={today} selectedDay={selectedDay} onDayPress={(offset) => { setSelectedDay(offset); scrollToSection(`day-${offset}`); }} />
+        </View>
+      )}
+
       <ScrollView
         ref={scrollRef}
         style={styles.scroll}
@@ -370,11 +390,8 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
               </TouchableOpacity>
             )}
 
-            {/* Week overview bar */}
-            <WeekBar events={events} today={today} />
-
             {/* Today - Timeline view */}
-            <View style={styles.section} onLayout={(e) => setTimelineY(e.nativeEvent.layout.y)}>
+            <View dataSet={{ section: 'day-0' }} style={styles.section} onLayout={(e) => setTimelineY(e.nativeEvent.layout.y)}>
               <View style={styles.sectionTitleRow}>
                 <Text style={styles.sectionTitle}>{todayStr}</Text>
                 <Text style={styles.currentTimeText}>{currentTimeStr}</Text>
@@ -402,7 +419,7 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
             </View>
 
             {/* Tomorrow */}
-            <View style={styles.section}>
+            <View dataSet={{ section: 'day-1' }} style={styles.section}>
               <Text style={styles.sectionTitle}>{tomorrowStr}</Text>
               {tomorrowEvents.length > 0 && (
                 <Text style={styles.sectionHint}>タップで詳細・編集</Text>
@@ -426,18 +443,26 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
 
             {/* Upcoming days (day+2 through day+6) */}
             {upcomingDays.map((day) => (
-              <View key={day.label} style={styles.section}>
+              <View key={day.offset} dataSet={{ section: `day-${day.offset}` }} style={styles.section}>
                 <Text style={styles.sectionTitle}>{day.label}</Text>
-                <Text style={styles.sectionHint}>タップで詳細・編集</Text>
-                {day.events.map((e) => (
-                  <EventCard
-                    key={e.id}
-                    event={e}
-                    isExpanded={expandedEventId === e.id}
-                    onToggle={() => toggleExpandEvent(e.id)}
-                    onEdit={() => setEditingEvent({ ...e })}
-                  />
-                ))}
+                {day.events.length === 0 ? (
+                  <View style={styles.emptyCard}>
+                    <Text style={styles.emptyText}>予定なし</Text>
+                  </View>
+                ) : (
+                  <>
+                    <Text style={styles.sectionHint}>タップで詳細・編集</Text>
+                    {day.events.map((e) => (
+                      <EventCard
+                        key={e.id}
+                        event={e}
+                        isExpanded={expandedEventId === e.id}
+                        onToggle={() => toggleExpandEvent(e.id)}
+                        onEdit={() => setEditingEvent({ ...e })}
+                      />
+                    ))}
+                  </>
+                )}
               </View>
             ))}
 
@@ -576,9 +601,9 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
 
 // --- Week overview bar ---
 
-function WeekBar({ events, today }: { events: CalendarEvent[]; today: Date }) {
+function WeekBar({ events, today, selectedDay, onDayPress }: { events: CalendarEvent[]; today: Date; selectedDay: number; onDayPress: (offset: number) => void }) {
   const todayMs = today.getTime();
-  const days: { label: string; date: Date; count: number; isToday: boolean }[] = [];
+  const days: { weekday: string; dayNum: string; count: number; isToday: boolean; offset: number; hasEvents: boolean }[] = [];
 
   for (let i = 0; i < 7; i++) {
     const d = new Date(todayMs + i * 86400000);
@@ -587,24 +612,34 @@ function WeekBar({ events, today }: { events: CalendarEvent[]; today: Date }) {
       const t = new Date(e.start.dateTime || e.start.date || '').getTime();
       return t >= d.getTime() && t < nextD.getTime();
     }).length;
-    const label = d.toLocaleDateString('ja-JP', { weekday: 'narrow', timeZone: 'Asia/Tokyo' });
+    const weekday = d.toLocaleDateString('ja-JP', { weekday: 'narrow', timeZone: 'Asia/Tokyo' });
     const dayNum = d.toLocaleDateString('ja-JP', { day: 'numeric', timeZone: 'Asia/Tokyo' });
-    days.push({ label: `${label}\n${dayNum}`, date: d, count, isToday: i === 0 });
+    days.push({ weekday, dayNum, count, isToday: i === 0, offset: i, hasEvents: count > 0 });
   }
 
   return (
     <View style={styles.weekBar}>
-      {days.map((d, i) => (
-        <View key={i} style={[styles.weekDay, d.isToday && styles.weekDayToday]}>
-          <Text style={[styles.weekDayLabel, d.isToday && styles.weekDayLabelToday]}>
-            {d.label}
+      {days.map((d) => (
+        <TouchableOpacity
+          key={d.offset}
+          style={[styles.weekDay, d.isToday && styles.weekDayToday, !d.isToday && d.offset === selectedDay && styles.weekDaySelected]}
+          onPress={() => onDayPress(d.offset)}
+          activeOpacity={0.6}
+        >
+          <Text style={[styles.weekDayWeekday, d.isToday && styles.weekDayWeekdayToday, !d.isToday && d.offset === selectedDay && styles.weekDayWeekdaySelected]}>
+            {d.weekday}
           </Text>
-          {d.count > 0 && (
-            <View style={[styles.weekDot, d.count >= 3 && styles.weekDotMany]}>
+          <Text style={[styles.weekDayNum, d.isToday && styles.weekDayNumToday, !d.isToday && d.offset === selectedDay && styles.weekDayNumSelected]}>
+            {d.dayNum}
+          </Text>
+          {d.hasEvents ? (
+            <View style={[styles.weekDot, d.count >= 3 ? styles.weekDotMany : d.count >= 1 ? styles.weekDotSome : null]}>
               <Text style={styles.weekDotText}>{d.count}</Text>
             </View>
+          ) : (
+            <View style={styles.weekDotEmpty} />
           )}
-        </View>
+        </TouchableOpacity>
       ))}
     </View>
   );
@@ -771,52 +806,89 @@ const styles = StyleSheet.create({
   loadingText: { marginTop: 12, color: '#64748B', fontSize: 14 },
   section: { marginBottom: 24 },
 
+  // Week bar container (sticky above scroll)
+  weekBarContainer: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 8,
+    backgroundColor: '#F8FAFC',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+  },
+
   // Week overview bar
   weekBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     backgroundColor: '#FFF',
-    borderRadius: 12,
-    padding: 8,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#F1F5F9',
+    borderRadius: 16,
+    padding: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    elevation: 2,
   },
   weekDay: {
     flex: 1,
     alignItems: 'center',
-    paddingVertical: 6,
-    borderRadius: 8,
+    paddingVertical: 8,
+    borderRadius: 12,
   },
   weekDayToday: {
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#3B82F6',
   },
-  weekDayLabel: {
+  weekDaySelected: {
+    backgroundColor: '#DBEAFE',
+    borderRadius: 12,
+  },
+  weekDayWeekday: {
     fontSize: 11,
     color: '#94A3B8',
-    textAlign: 'center',
-    lineHeight: 15,
+    fontWeight: '600',
   },
-  weekDayLabelToday: {
+  weekDayWeekdayToday: {
+    color: '#DBEAFE',
+  },
+  weekDayWeekdaySelected: {
     color: '#3B82F6',
+  },
+  weekDayNum: {
+    fontSize: 15,
     fontWeight: '700',
+    color: '#475569',
+    marginTop: 1,
+  },
+  weekDayNumToday: {
+    color: '#FFF',
+  },
+  weekDayNumSelected: {
+    color: '#1E40AF',
   },
   weekDot: {
     marginTop: 4,
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: '#3B82F6',
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#93C5FD',
     alignItems: 'center',
     justifyContent: 'center',
   },
+  weekDotSome: {
+    backgroundColor: '#3B82F6',
+  },
   weekDotMany: {
-    backgroundColor: '#1D4ED8',
+    backgroundColor: '#1E40AF',
   },
   weekDotText: {
     fontSize: 10,
     fontWeight: '700',
     color: '#FFF',
+  },
+  weekDotEmpty: {
+    marginTop: 4,
+    width: 20,
+    height: 20,
   },
 
   // Section title with current time
