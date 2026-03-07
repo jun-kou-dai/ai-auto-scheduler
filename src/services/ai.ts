@@ -6,6 +6,7 @@ import { nowJST, jstAddDays, jstToDate, toISODateString } from '../utils/timezon
 
 const AI_PROVIDER = process.env.EXPO_PUBLIC_AI_PROVIDER || 'gemini';
 const AI_API_KEY = process.env.EXPO_PUBLIC_AI_API_KEY || '';
+const GEMINI_PROXY_URL = 'https://ai-scheduler-proxy.netlify.app/.netlify/functions/gemini';
 
 interface AITaskResult {
   name: string;
@@ -163,10 +164,12 @@ function createFallbackAnalysis(input: string): AITaskResult {
   let inputClean = timeStr ? input.replace(timeStr, '') : input;
   if (endStr) inputClean = inputClean.replace(endStr, '');
   const durHourMatch = inputClean.match(/(\d+)時間/);
+  const durHalfMatch = /時間半/.test(inputClean);
   const durMinMatch = inputClean.match(/(\d+)分/);
   if (durHourMatch) {
     durationMinutes = parseInt(durHourMatch[1], 10) * 60;
-    if (durMinMatch) durationMinutes += parseInt(durMinMatch[1], 10);
+    if (durHalfMatch) durationMinutes += 30;
+    else if (durMinMatch) durationMinutes += parseInt(durMinMatch[1], 10);
   } else if (durMinMatch) {
     durationMinutes = parseInt(durMinMatch[1], 10);
   } else if (endMinutesOfDay !== null && tm) {
@@ -481,16 +484,15 @@ function validateTaskResult(item: any): AITaskResult {
   };
 }
 
-// Gemini API call
+// Gemini API call via server-side proxy (API key is stored on proxy server)
 async function callGemini(taskText: string): Promise<string> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${AI_API_KEY}`;
   const prompt = buildSystemPrompt();
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 30000);
 
   try {
-    const res = await fetch(url, {
+    const res = await fetch(GEMINI_PROXY_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

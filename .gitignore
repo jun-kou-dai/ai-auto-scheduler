@@ -31,7 +31,11 @@ yarn-error.*
 *.pem
 
 # local env files
+.env
 .env*.local
+
+# API proxy (deployed separately to Netlify)
+proxy/
 
 # typescript
 *.tsbuildinfo
