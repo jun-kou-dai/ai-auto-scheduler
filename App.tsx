@@ -12,6 +12,7 @@ import { checkEnv } from './src/utils/envCheck';
 import { LoginScreen } from './src/screens/LoginScreen';
 import { DashboardScreen } from './src/screens/DashboardScreen';
 import { TaskInputScreen } from './src/screens/TaskInputScreen';
+import { ConfirmScreen } from './src/screens/ConfirmScreen';
 import { ProposalScreen } from './src/screens/ProposalScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { Screen, Task } from './src/types';
@@ -116,6 +117,14 @@ function AppRouter() {
         <TaskInputScreen
           onNavigate={handleNavigate}
           onTasksAnalyzed={handleTasksAnalyzed}
+        />
+      );
+    case 'confirm':
+      return (
+        <ConfirmScreen
+          onNavigate={handleNavigate}
+          tasks={tasks}
+          onTasksUpdated={handleTasksUpdated}
         />
       );
     case 'proposal':

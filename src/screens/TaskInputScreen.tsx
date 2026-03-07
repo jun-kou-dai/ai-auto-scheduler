@@ -79,7 +79,7 @@ export function TaskInputScreen({ onNavigate, onTasksAnalyzed }: Props) {
     try {
       const tasks = await analyzeTasks(input);
       onTasksAnalyzed(tasks);
-      onNavigate('proposal');
+      onNavigate('confirm');
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {

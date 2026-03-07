@@ -5,6 +5,14 @@ export type PreferredTime = '午前' | '午後' | '夜' | null;
 export type TaskStatus = 'unassigned' | 'scheduled';
 export type Category = '仕事' | '勉強' | '運動' | '家事' | '買い物' | 'その他';
 
+export type ConfidenceLevel = 'high' | 'medium' | 'low';
+
+export interface TaskConfidence {
+  duration: ConfidenceLevel;
+  preferred_start: ConfidenceLevel;
+  priority: ConfidenceLevel;
+}
+
 export interface Task {
   id: string;
   raw: string;
@@ -18,6 +26,7 @@ export interface Task {
   category: Category;
   status: TaskStatus;
   reasoning: string; // AI's reasoning for the estimates
+  confidence?: TaskConfidence; // AI's confidence in each estimate
 }
 
 export interface ProposalEvent {
@@ -69,4 +78,4 @@ export interface UserInfo {
 export type AIProvider = 'gemini' | 'claude';
 
 // App screen type
-export type Screen = 'login' | 'dashboard' | 'taskInput' | 'proposal' | 'settings';
+export type Screen = 'login' | 'dashboard' | 'taskInput' | 'confirm' | 'proposal' | 'settings';

@@ -1,7 +1,7 @@
 // Phase D: AI analysis service (JSON only output)
 // Abstracted to support both Gemini and Claude
 // With regex fallback for AI failure resilience
-import { Task, Category } from '../types';
+import { Task, Category, TaskConfidence, ConfidenceLevel } from '../types';
 import { nowJST, jstAddDays, jstToDate, toISODateString } from '../utils/timezone';
 
 const AI_PROVIDER = process.env.EXPO_PUBLIC_AI_PROVIDER || 'gemini';
@@ -18,6 +18,7 @@ interface AITaskResult {
   preferred_time: '午前' | '午後' | '夜' | null;
   category: Category;
   reasoning: string;
+  confidence?: TaskConfidence;
 }
 
 // ============================================================
@@ -200,6 +201,11 @@ function createFallbackAnalysis(input: string): AITaskResult {
   // タイトル: 強力なキーワード抽出
   const title = extractTitle(input);
 
+  // Determine confidence based on what was explicitly found in input
+  const durationConfidence: ConfidenceLevel = (durHourMatch || durMinMatch || (endMinutesOfDay !== null && tm)) ? 'high' : 'low';
+  const startConfidence: ConfidenceLevel = preferredStart ? (tm ? 'high' : 'medium') : 'low';
+  const priorityConfidence: ConfidenceLevel = /急ぎ|至急|今日中|すぐ|大事|重要|絶対|マスト|できれば|そのうち|暇な時|余裕あれば|いつでもいい/.test(input) ? 'high' : 'low';
+
   return {
     name: title,
     description: input.trim(),
@@ -210,6 +216,11 @@ function createFallbackAnalysis(input: string): AITaskResult {
     preferred_time: preferredTime,
     category,
     reasoning: 'フォールバック: AIが利用できないため、正規表現で解析しました',
+    confidence: {
+      duration: durationConfidence,
+      preferred_start: startConfidence,
+      priority: priorityConfidence,
+    },
   };
 }
 
@@ -269,7 +280,12 @@ function buildSystemPrompt(): string {
   "priority": "高" or "中" or "低",
   "preferred_time": "午前" or "午後" or "夜" or null,
   "category": "仕事" or "勉強" or "運動" or "家事" or "買い物" or "その他",
-  "reasoning": "この推定の根拠（1-2文で簡潔に）"
+  "reasoning": "この推定の根拠（1-2文で簡潔に）",
+  "confidence": {
+    "duration": "high" or "medium" or "low",
+    "preferred_start": "high" or "medium" or "low",
+    "priority": "high" or "medium" or "low"
+  }
 }
 
 === タスク名のルール（最重要） ===
@@ -417,7 +433,25 @@ reasoning記載ルール:
 - 所要時間をなぜその値にしたか
 - 優先度の判断理由
 - 曖昧な表現をどう解釈したか
-- 入力に時間や期限のヒントがあればそれを引用`;
+- 入力に時間や期限のヒントがあればそれを引用
+
+=== confidence（確信度）のルール ===
+各フィールドの推定にどれだけ自信があるかを返す。ユーザーに確認が必要かどうかの判断に使う。
+
+duration（所要時間の確信度）:
+- "high": ユーザーが明示的に指定（「2時間」「30分」「1時間半」等）
+- "medium": タスク種別や常識から推定（「野球観戦→120分」「ミーティング→60分」「掃除→30分」等）
+- "low": 手がかりがなくデフォルト値を使用
+
+preferred_start（開始時刻の確信度）:
+- "high": ユーザーが明示的に指定（「18時から」「午後3時に」等）
+- "medium": 曖昧な時間帯指定から推定（「夕方」「朝イチ」「午後」等）
+- "low": 時間の指定なし（preferred_startがnullの場合は常に"low"）
+
+priority（優先度の確信度）:
+- "high": ユーザーが明示的に指定（「急ぎ」「重要」「できれば」等）
+- "medium": 文脈から推定（締切が近い→高、余裕がある→低 等）
+- "low": 手がかりがなくデフォルト値（中）を使用`;
 }
 
 // Parse AI response, extracting JSON from possible markdown fencing
@@ -457,6 +491,24 @@ function parseAIResponse(text: string): AITaskResult[] {
   }
 }
 
+// Validate confidence level value
+function validateConfidence(val: any): ConfidenceLevel {
+  if (val === 'high' || val === 'medium' || val === 'low') return val;
+  return 'low';
+}
+
+// Parse confidence object from AI response
+function parseConfidence(item: any): TaskConfidence {
+  if (item && typeof item === 'object') {
+    return {
+      duration: validateConfidence(item.duration),
+      preferred_start: validateConfidence(item.preferred_start),
+      priority: validateConfidence(item.priority),
+    };
+  }
+  return { duration: 'low', preferred_start: 'low', priority: 'low' };
+}
+
 // Validate and apply fallback values
 function validateTaskResult(item: any): AITaskResult {
   const VALID_CATEGORIES: Category[] = ['仕事', '勉強', '運動', '家事', '買い物', 'その他'];
@@ -481,6 +533,7 @@ function validateTaskResult(item: any): AITaskResult {
         : null,
     category: VALID_CATEGORIES.includes(item.category) ? item.category : 'その他',
     reasoning: typeof item.reasoning === 'string' ? item.reasoning : '',
+    confidence: parseConfidence(item.confidence),
   };
 }
 
@@ -621,6 +674,7 @@ export async function analyzeTasks(rawInput: string): Promise<Task[]> {
       category: result.category,
       status: 'unassigned',
       reasoning: result.reasoning,
+      confidence: result.confidence,
     }));
   } catch (err: any) {
     // AI失敗時: 自動でregexフォールバック（エラー画面を出さない）
@@ -645,6 +699,7 @@ export async function analyzeTasks(rawInput: string): Promise<Task[]> {
           category: fallback.category,
           status: 'unassigned',
           reasoning: fallback.reasoning,
+          confidence: fallback.confidence,
         };
       });
     });
