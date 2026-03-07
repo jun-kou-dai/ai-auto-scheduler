@@ -62,7 +62,7 @@ function getTestMode(): Screen | null {
   if (typeof window === 'undefined') return null;
   const params = new URLSearchParams(window.location.search);
   const test = params.get('test');
-  if (test === 'confirm' || test === 'taskInput' || test === 'proposal') return test as Screen;
+  if (test === 'confirm' || test === 'taskInput' || test === 'proposal' || test === 'dashboard') return test as Screen;
   return null;
 }
 

@@ -17,6 +17,7 @@ import { CalendarEvent, Screen, Task } from '../types';
 import { TaskEditModal } from '../components/TaskEditModal';
 import { CalendarEventEditModal } from '../components/CalendarEventEditModal';
 import { nowJST, jstToDate } from '../utils/timezone';
+import { TimelineView } from '../components/TimelineView';
 
 interface Props {
   onNavigate: (screen: Screen) => void;
@@ -42,7 +43,44 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
   // Current time state (updates every 30 seconds for time-aware display)
   const [now, setNow] = useState(new Date());
 
+  // Test mode: generate mock events for visual testing
+  const isTestMode = typeof window !== 'undefined' && new URLSearchParams(window.location?.search || '').get('test') === 'dashboard';
+
   const fetchEvents = useCallback(async () => {
+    if (isTestMode) {
+      const today = new Date();
+      const d = (h: number, m: number) => {
+        const dt = new Date(today);
+        dt.setHours(h, m, 0, 0);
+        return dt.toISOString();
+      };
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const dt = (h: number, m: number) => {
+        const t = new Date(tomorrow);
+        t.setHours(h, m, 0, 0);
+        return t.toISOString();
+      };
+      const day3 = new Date(today);
+      day3.setDate(day3.getDate() + 3);
+      const d3 = (h: number, m: number) => {
+        const t = new Date(day3);
+        t.setHours(h, m, 0, 0);
+        return t.toISOString();
+      };
+      setEvents([
+        { id: 'm1', summary: 'チームMTG', start: { dateTime: d(9, 0) }, end: { dateTime: d(10, 0) } },
+        { id: 'm2', summary: 'ランチ', start: { dateTime: d(12, 0) }, end: { dateTime: d(13, 0) } },
+        { id: 'm3', summary: '企画書作成', start: { dateTime: d(14, 0) }, end: { dateTime: d(15, 30) } },
+        { id: 'm4', summary: 'ランニング', start: { dateTime: d(18, 0) }, end: { dateTime: d(19, 0) } },
+        { id: 'm5', summary: '読書', start: { dateTime: d(20, 0) }, end: { dateTime: d(21, 30) } },
+        { id: 'm6', summary: '歯医者', start: { dateTime: dt(10, 0) }, end: { dateTime: dt(11, 0) } },
+        { id: 'm7', summary: '買い物', start: { dateTime: dt(15, 0) }, end: { dateTime: dt(16, 0) } },
+        { id: 'm8', summary: 'ジム', start: { dateTime: d3(18, 0) }, end: { dateTime: d3(19, 30) } },
+      ] as CalendarEvent[]);
+      setLoading(false);
+      return;
+    }
     if (!accessToken) {
       setLoading(false);
       return;
@@ -61,14 +99,16 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [accessToken, logout]);
+  }, [accessToken, logout, isTestMode]);
 
   // Fetch events on mount + delayed re-fetch to catch recently created events
   useEffect(() => {
     fetchEvents();
-    const timer = setTimeout(fetchEvents, 2000);
-    return () => clearTimeout(timer);
-  }, [fetchEvents]);
+    if (!isTestMode) {
+      const timer = setTimeout(fetchEvents, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [fetchEvents, isTestMode]);
 
   // Keep current time updated every 30 seconds
   useEffect(() => {
@@ -303,7 +343,10 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
               </TouchableOpacity>
             )}
 
-            {/* Today */}
+            {/* Week overview bar */}
+            <WeekBar events={events} today={today} />
+
+            {/* Today - Timeline view */}
             <View style={styles.section}>
               <View style={styles.sectionTitleRow}>
                 <Text style={styles.sectionTitle}>{todayStr}</Text>
@@ -323,24 +366,11 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
                   <Text style={styles.emptyText}>予定なし</Text>
                 </View>
               ) : (
-                <>
-                  {todayEvents.map((e, idx) => {
-                    const status = getEventStatus(e);
-                    return (
-                      <React.Fragment key={e.id}>
-                        {idx === nowInsertIndex && <NowIndicator time={currentTimeStr} />}
-                        <EventCard
-                          event={e}
-                          status={status}
-                          isExpanded={expandedEventId === e.id}
-                          onToggle={() => toggleExpandEvent(e.id)}
-                          onEdit={() => setEditingEvent({ ...e })}
-                        />
-                      </React.Fragment>
-                    );
-                  })}
-                  {nowInsertIndex === todayEvents.length && <NowIndicator time={currentTimeStr} />}
-                </>
+                <TimelineView
+                  events={todayEvents}
+                  now={now}
+                  onEventPress={(e) => setEditingEvent({ ...e })}
+                />
               )}
             </View>
 
@@ -517,6 +547,42 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
   );
 }
 
+// --- Week overview bar ---
+
+function WeekBar({ events, today }: { events: CalendarEvent[]; today: Date }) {
+  const todayMs = today.getTime();
+  const days: { label: string; date: Date; count: number; isToday: boolean }[] = [];
+
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(todayMs + i * 86400000);
+    const nextD = new Date(todayMs + (i + 1) * 86400000);
+    const count = events.filter((e) => {
+      const t = new Date(e.start.dateTime || e.start.date || '').getTime();
+      return t >= d.getTime() && t < nextD.getTime();
+    }).length;
+    const label = d.toLocaleDateString('ja-JP', { weekday: 'narrow', timeZone: 'Asia/Tokyo' });
+    const dayNum = d.toLocaleDateString('ja-JP', { day: 'numeric', timeZone: 'Asia/Tokyo' });
+    days.push({ label: `${label}\n${dayNum}`, date: d, count, isToday: i === 0 });
+  }
+
+  return (
+    <View style={styles.weekBar}>
+      {days.map((d, i) => (
+        <View key={i} style={[styles.weekDay, d.isToday && styles.weekDayToday]}>
+          <Text style={[styles.weekDayLabel, d.isToday && styles.weekDayLabelToday]}>
+            {d.label}
+          </Text>
+          {d.count > 0 && (
+            <View style={[styles.weekDot, d.count >= 3 && styles.weekDotMany]}>
+              <Text style={styles.weekDotText}>{d.count}</Text>
+            </View>
+          )}
+        </View>
+      ))}
+    </View>
+  );
+}
+
 // --- Now Indicator (red line showing current time) ---
 
 function NowIndicator({ time }: { time: string }) {
@@ -677,6 +743,54 @@ const styles = StyleSheet.create({
   loadingBox: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60 },
   loadingText: { marginTop: 12, color: '#64748B', fontSize: 14 },
   section: { marginBottom: 24 },
+
+  // Week overview bar
+  weekBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    backgroundColor: '#FFF',
+    borderRadius: 12,
+    padding: 8,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+  },
+  weekDay: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  weekDayToday: {
+    backgroundColor: '#EFF6FF',
+  },
+  weekDayLabel: {
+    fontSize: 11,
+    color: '#94A3B8',
+    textAlign: 'center',
+    lineHeight: 15,
+  },
+  weekDayLabelToday: {
+    color: '#3B82F6',
+    fontWeight: '700',
+  },
+  weekDot: {
+    marginTop: 4,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#3B82F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  weekDotMany: {
+    backgroundColor: '#1D4ED8',
+  },
+  weekDotText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#FFF',
+  },
 
   // Section title with current time
   sectionTitleRow: {
