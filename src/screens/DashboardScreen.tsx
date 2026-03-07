@@ -49,7 +49,7 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
     }
     try {
       setError(null);
-      const evts = await getUpcomingEvents(accessToken);
+      const evts = await getUpcomingEvents(accessToken, 7);
       setEvents(evts);
     } catch (err) {
       if (err instanceof CalendarApiError && err.status === 401) {
@@ -108,6 +108,21 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
     const t = new Date(e.start.dateTime || e.start.date || '').getTime();
     return t >= tomorrowStart && t < dayAfterStart;
   });
+
+  // Build upcoming days (day+2 through day+6)
+  const upcomingDays: { label: string; events: CalendarEvent[] }[] = [];
+  for (let offset = 2; offset <= 6; offset++) {
+    const dayStart = jstToDate(jst.year, jst.month, jst.day + offset);
+    const dayEnd = jstToDate(jst.year, jst.month, jst.day + offset + 1);
+    const dayEvents = events.filter((e) => {
+      const t = new Date(e.start.dateTime || e.start.date || '').getTime();
+      return t >= dayStart.getTime() && t < dayEnd.getTime();
+    });
+    if (dayEvents.length > 0) {
+      const label = dayStart.toLocaleDateString('ja-JP', { month: 'long', day: 'numeric', weekday: 'short', timeZone: 'Asia/Tokyo' });
+      upcomingDays.push({ label, events: dayEvents });
+    }
+  }
 
   // Event status helper (past / current / upcoming)
   const getEventStatus = (event: CalendarEvent): 'past' | 'current' | 'upcoming' => {
@@ -351,6 +366,23 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
                 ))
               )}
             </View>
+
+            {/* Upcoming days (day+2 through day+6) */}
+            {upcomingDays.map((day) => (
+              <View key={day.label} style={styles.section}>
+                <Text style={styles.sectionTitle}>{day.label}</Text>
+                <Text style={styles.sectionHint}>タップで詳細・編集</Text>
+                {day.events.map((e) => (
+                  <EventCard
+                    key={e.id}
+                    event={e}
+                    isExpanded={expandedEventId === e.id}
+                    onToggle={() => toggleExpandEvent(e.id)}
+                    onEdit={() => setEditingEvent({ ...e })}
+                  />
+                ))}
+              </View>
+            ))}
 
             {/* Unassigned tasks detail section */}
             {unassignedTasks.length > 0 && (
