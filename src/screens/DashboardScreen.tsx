@@ -1,6 +1,6 @@
 // Screen 2: Dashboard - today/tomorrow events (tappable + editable) + unassigned tasks
 // Time-aware display: past events dimmed, current event highlighted, now indicator
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -43,6 +43,10 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
   // Current time state (updates every 30 seconds for time-aware display)
   const [now, setNow] = useState(new Date());
 
+  // Auto-scroll to current time area
+  const scrollRef = useRef<ScrollView>(null);
+  const [timelineY, setTimelineY] = useState(0);
+
   // Test mode: generate mock events for visual testing
   const isTestMode = typeof window !== 'undefined' && new URLSearchParams(window.location?.search || '').get('test') === 'dashboard';
 
@@ -69,14 +73,20 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
         return t.toISOString();
       };
       setEvents([
-        { id: 'm1', summary: 'チームMTG', start: { dateTime: d(9, 0) }, end: { dateTime: d(10, 0) } },
-        { id: 'm2', summary: 'ランチ', start: { dateTime: d(12, 0) }, end: { dateTime: d(13, 0) } },
-        { id: 'm3', summary: '企画書作成', start: { dateTime: d(14, 0) }, end: { dateTime: d(15, 30) } },
-        { id: 'm4', summary: 'ランニング', start: { dateTime: d(18, 0) }, end: { dateTime: d(19, 0) } },
-        { id: 'm5', summary: '読書', start: { dateTime: d(20, 0) }, end: { dateTime: d(21, 30) } },
-        { id: 'm6', summary: '歯医者', start: { dateTime: dt(10, 0) }, end: { dateTime: dt(11, 0) } },
-        { id: 'm7', summary: '買い物', start: { dateTime: dt(15, 0) }, end: { dateTime: dt(16, 0) } },
-        { id: 'm8', summary: 'ジム', start: { dateTime: d3(18, 0) }, end: { dateTime: d3(19, 30) } },
+        // Today: overlapping events + long titles
+        { id: 'm1', summary: '出発し・トレーニングを開始する準備のための朝ミーティング', start: { dateTime: d(9, 0) }, end: { dateTime: d(10, 30) } },
+        { id: 'm2', summary: '書道レッスンと負荷トレーニングの確認作業', start: { dateTime: d(10, 0) }, end: { dateTime: d(11, 30) } },
+        { id: 'm3', summary: 'ランチ', start: { dateTime: d(12, 0) }, end: { dateTime: d(13, 0) } },
+        { id: 'm4', summary: '企画書作成', start: { dateTime: d(14, 0) }, end: { dateTime: d(15, 30) } },
+        { id: 'm5', summary: 'クライアントMTG', start: { dateTime: d(14, 30) }, end: { dateTime: d(15, 30) } },
+        { id: 'm6', summary: 'ランニング', start: { dateTime: d(18, 0) }, end: { dateTime: d(19, 0) } },
+        { id: 'm7', summary: '読書', start: { dateTime: d(20, 0) }, end: { dateTime: d(21, 30) } },
+        // Tomorrow
+        { id: 'm8', summary: '歯医者', start: { dateTime: dt(10, 0) }, end: { dateTime: dt(11, 0) } },
+        { id: 'm9', summary: '買い物', start: { dateTime: dt(15, 0) }, end: { dateTime: dt(16, 0) } },
+        { id: 'm10', summary: 'ヨガ教室', start: { dateTime: dt(18, 0) }, end: { dateTime: dt(19, 30) } },
+        // Day+3
+        { id: 'm11', summary: 'ジム', start: { dateTime: d3(18, 0) }, end: { dateTime: d3(19, 30) } },
       ] as CalendarEvent[]);
       setLoading(false);
       return;
@@ -123,6 +133,22 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
     }, 5 * 60 * 1000);
     return () => clearInterval(timer);
   }, [accessToken, fetchEvents]);
+
+  // Auto-scroll to current time in the timeline when events first load
+  const hasAutoScrolled = useRef(false);
+  useEffect(() => {
+    if (!loading && timelineY > 0 && !hasAutoScrolled.current && scrollRef.current) {
+      hasAutoScrolled.current = true;
+      const currentJst = nowJST();
+      const currentHour = currentJst.hours + currentJst.minutes / 60;
+      const HOUR_HEIGHT = 56;
+      const START_HOUR = 6;
+      const scrollTarget = timelineY + (currentHour - START_HOUR) * HOUR_HEIGHT - 120;
+      setTimeout(() => {
+        scrollRef.current?.scrollTo({ y: Math.max(0, scrollTarget), animated: false });
+      }, 50);
+    }
+  }, [loading, timelineY]);
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -303,6 +329,7 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
       </View>
 
       <ScrollView
+        ref={scrollRef}
         style={styles.scroll}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
@@ -347,7 +374,7 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
             <WeekBar events={events} today={today} />
 
             {/* Today - Timeline view */}
-            <View style={styles.section}>
+            <View style={styles.section} onLayout={(e) => setTimelineY(e.nativeEvent.layout.y)}>
               <View style={styles.sectionTitleRow}>
                 <Text style={styles.sectionTitle}>{todayStr}</Text>
                 <Text style={styles.currentTimeText}>{currentTimeStr}</Text>

@@ -28,7 +28,7 @@ export async function getUpcomingEvents(
     timeMax: timeMax.toISOString(),
     singleEvents: 'true',
     orderBy: 'startTime',
-    maxResults: '50',
+    maxResults: '250',
   });
 
   const res = await fetch(`${CALENDAR_API}/calendars/primary/events?${params}`, {
