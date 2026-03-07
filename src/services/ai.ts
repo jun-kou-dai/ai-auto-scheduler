@@ -104,6 +104,18 @@ function extractTitle(input: string): string {
 }
 
 // ============================================================
+// Multi-task line splitter for voice input
+// ============================================================
+// Splits "18時から30分間読書で19時からバイブコーディング" into
+// ["18時から30分間読書", "19時からバイブコーディング"]
+function splitMultiTaskLine(line: string): string[] {
+  // Split on conjunctions/particles followed by time expressions
+  const result = line.split(/(?:で|、|。|それから|それと|そして|あとは?|その後)\s*(?=(?:午前|午後|夕方|夜|朝)?\d{1,2}時)/);
+  const filtered = result.map(s => s.trim()).filter(s => s.length > 0);
+  return filtered.length > 0 ? filtered : [line];
+}
+
+// ============================================================
 // Regex-based fallback parser (AI failure resilience)
 // ============================================================
 function createFallbackAnalysis(input: string): AITaskResult {
@@ -242,7 +254,7 @@ function buildSystemPrompt(): string {
 
 必ず以下のJSON配列だけを返してください。余計な文章・マークダウン・説明は一切禁止です。
 
-重要: ユーザーの入力1行につき、必ず1つのタスクオブジェクトを返してください。入力の行数と出力の配列の要素数は一致させてください。
+重要: 1行に複数のタスクが含まれている場合は、タスクごとに分割して別々のオブジェクトを返してください。区切りの手がかり: 複数の時刻表現、「それから」「あと」「で」+新しい活動。入力行数と出力数は一致しなくて構いません。
 
 各タスクの形式:
 {
@@ -471,7 +483,7 @@ function validateTaskResult(item: any): AITaskResult {
 
 // Gemini API call
 async function callGemini(taskText: string): Promise<string> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${AI_API_KEY}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${AI_API_KEY}`;
   const prompt = buildSystemPrompt();
 
   const controller = new AbortController();
@@ -612,22 +624,27 @@ export async function analyzeTasks(rawInput: string): Promise<Task[]> {
     // AI失敗時: 自動でregexフォールバック（エラー画面を出さない）
     console.warn('[AI分析失敗] フォールバックを使用:', err.message || err);
 
-    return lines.map((line, index): Task => {
-      const fallback = createFallbackAnalysis(line);
-      return {
-        id: `task-${Date.now()}-${index}`,
-        raw: line,
-        name: fallback.name,
-        description: fallback.description,
-        duration_minutes: fallback.duration_minutes,
-        deadline: fallback.deadline,
-        preferred_start: fallback.preferred_start,
-        priority: fallback.priority,
-        preferred_time: fallback.preferred_time,
-        category: fallback.category,
-        status: 'unassigned',
-        reasoning: fallback.reasoning,
-      };
+    let taskIndex = 0;
+    return lines.flatMap((line): Task[] => {
+      const subLines = splitMultiTaskLine(line);
+      return subLines.map((subLine): Task => {
+        const fallback = createFallbackAnalysis(subLine);
+        const idx = taskIndex++;
+        return {
+          id: `task-${Date.now()}-${idx}`,
+          raw: subLine,
+          name: fallback.name,
+          description: fallback.description,
+          duration_minutes: fallback.duration_minutes,
+          deadline: fallback.deadline,
+          preferred_start: fallback.preferred_start,
+          priority: fallback.priority,
+          preferred_time: fallback.preferred_time,
+          category: fallback.category,
+          status: 'unassigned',
+          reasoning: fallback.reasoning,
+        };
+      });
     });
   }
 }
