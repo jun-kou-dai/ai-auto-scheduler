@@ -647,9 +647,12 @@ function isNonTaskInput(line: string): boolean {
   const s = line.replace(/\s+/g, '');
   // Too short to be a task (1-2 chars)
   if (s.length <= 2) return true;
-  // Conversation / greetings / filler
-  const nonTaskPatterns = /^(ちょっと待って|待ってね|えーと|えっと|うーん|あー|おはよう|こんにちは|こんばんは|はい|うん|いいえ|ありがとう|了解|OK|ok|おk|おっけー|わかった|やっぱ(り)?なし|消して|やり直し|キャンセル|あ、?違う|なんでもない|間違え?た|ごめん|すみません|よろしく)$/i;
+  // Conversation / greetings / filler (prefix match – no $ anchor so suffixes like ね、ください are OK)
+  const nonTaskPatterns = /^(ちょっと待って|待って(ね|ください|よ)?|えー?と|えっと|うー+ん|あー+|おはよう|こんにち[はわ]|こんばん[はわ]|はい+|うん|いいえ|ありがとう|了解|OK|ok|おk|おっけー?|わかった|わかりました|やっぱ(り)?なし|消して|やり直し(て)?|キャンセル|あ、?違う|なんでもない|間違え?た|ごめん(なさい)?|すみません|よろしく|お願い(します)?|それだけ|以上|なし|特にない|大丈夫|もういい|いいです)$/i;
   if (nonTaskPatterns.test(s)) return true;
+  // Short filler that starts with a non-task prefix (e.g. "ちょっと待ってね", "おはようございます")
+  const prefixPatterns = /^(ちょっと待|待って|えー|うー|あー|おはよう|こんにち|こんばん|ありがと|ごめん|すみま|よろしく|お願い)/;
+  if (prefixPatterns.test(s) && s.length <= 15) return true;
   return false;
 }
 
