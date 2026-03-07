@@ -30,6 +30,9 @@ jobs:
       - run: npm ci
 
       - run: npx expo export --platform web
+        env:
+          EXPO_PUBLIC_GOOGLE_CLIENT_ID: 472887512782-ss2q5s9uhim0h1j62rqtua5kdt6ns01g.apps.googleusercontent.com
+          EXPO_PUBLIC_AI_PROVIDER: gemini
 
       - run: node scripts/postbuild.js
 
