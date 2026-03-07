@@ -23,12 +23,14 @@ function formatDateTimeLocal(isoString?: string): string {
   if (!isoString) return '';
   const d = new Date(isoString);
   if (isNaN(d.getTime())) return '';
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  const hh = String(d.getHours()).padStart(2, '0');
-  const min = String(d.getMinutes()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}T${hh}:${min}`;
+  // Always format in JST (Asia/Tokyo)
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Tokyo',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  }).formatToParts(d);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value || '00';
+  return `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}`;
 }
 
 const webInputStyle: any = {
@@ -57,11 +59,12 @@ export function CalendarEventEditModal({ event, onSave, onDelete, onCancel }: Pr
     if (title.trim() && title !== event.summary) updates.summary = title.trim();
     if (description !== (event.description || '')) updates.description = description;
     if (!isAllDay && startTime) {
-      const d = new Date(startTime);
+      // datetime-local value has no timezone; treat as JST
+      const d = new Date(startTime + '+09:00');
       if (!isNaN(d.getTime())) updates.start = d.toISOString();
     }
     if (!isAllDay && endTime) {
-      const d = new Date(endTime);
+      const d = new Date(endTime + '+09:00');
       if (!isNaN(d.getTime())) updates.end = d.toISOString();
     }
     onSave(event.id, updates);

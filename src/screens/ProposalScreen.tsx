@@ -63,8 +63,8 @@ export function ProposalScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
 
   const generateScheduleProposal = async () => {
     if (!accessToken) {
-      // Token missing - redirect to login instead of showing confusing error
-      logout();
+      setError('セッションが切れました。ダッシュボードに戻って再度お試しください。');
+      setState('error');
       return;
     }
 

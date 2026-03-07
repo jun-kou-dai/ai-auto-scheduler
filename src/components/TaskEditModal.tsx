@@ -31,22 +31,24 @@ const webDateInputStyle: any = {
   fontFamily: 'inherit',
 };
 
-// Format a deadline string to datetime-local format (YYYY-MM-DDThh:mm)
-function toDatetimeLocal(deadline: string | null): string {
-  if (!deadline) return '';
-  const d = new Date(deadline);
-  if (isNaN(d.getTime())) return '';
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+// Format using JST timezone (always Asia/Tokyo regardless of browser locale)
+function jstParts(d: Date): Record<string, string> {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Tokyo',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  }).formatToParts(d);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value || '00';
+  return { year: get('year'), month: get('month'), day: get('day'), hour: get('hour'), minute: get('minute') };
 }
 
-// Format to date-only (YYYY-MM-DD) for the date input
+// Format to date-only (YYYY-MM-DD) in JST
 function toDateOnly(deadline: string | null): string {
   if (!deadline) return '';
   const d = new Date(deadline);
   if (isNaN(d.getTime())) return '';
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const p = jstParts(d);
+  return `${p.year}-${p.month}-${p.day}`;
 }
 
 export function TaskEditModal({ task, onSave, onCancel }: Props) {
@@ -58,8 +60,8 @@ export function TaskEditModal({ task, onSave, onCancel }: Props) {
     if (!task.deadline) return '23:59';
     const d = new Date(task.deadline);
     if (isNaN(d.getTime())) return '23:59';
-    const pad = (n: number) => String(n).padStart(2, '0');
-    return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    const p = jstParts(d);
+    return `${p.hour}:${p.minute}`;
   });
   const [preferredTime, setPreferredTime] = useState<PreferredTime>(task.preferred_time);
 
@@ -76,9 +78,9 @@ export function TaskEditModal({ task, onSave, onCancel }: Props) {
     let parsedDeadline: string | null = null;
 
     if (deadlineDate.trim()) {
-      // Combine date + time
+      // Combine date + time, treat as JST (+09:00)
       const timeStr = deadlineTime.trim() || '23:59';
-      const combined = `${deadlineDate.trim()}T${timeStr}:00`;
+      const combined = `${deadlineDate.trim()}T${timeStr}:00+09:00`;
       const d = new Date(combined);
       if (!isNaN(d.getTime())) {
         parsedDeadline = d.toISOString();

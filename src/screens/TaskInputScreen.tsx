@@ -50,6 +50,17 @@ export function TaskInputScreen({ onNavigate, onTasksAnalyzed }: Props) {
     };
   }, [isListening]);
 
+  // Cleanup voice recognition on unmount to prevent memory leak
+  useEffect(() => {
+    return () => {
+      isListeningRef.current = false;
+      if (recognitionRef.current) {
+        try { recognitionRef.current.stop(); } catch { /* ignore */ }
+        recognitionRef.current = null;
+      }
+    };
+  }, []);
+
   const exampleTasks = `レポートの下書きを作る（2時間、金曜まで）
 チームMTGの資料準備
 メール返信（30分くらい）

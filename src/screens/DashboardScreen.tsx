@@ -42,7 +42,6 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
   // Current time state (updates every 30 seconds for time-aware display)
   const [now, setNow] = useState(new Date());
 
-
   const fetchEvents = useCallback(async () => {
     if (!accessToken) {
       setLoading(false);
@@ -210,7 +209,6 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
     onTasksUpdated(newTasks);
     setExpandedTaskId(null);
   };
-
 
   return (
     <View style={styles.container}>
