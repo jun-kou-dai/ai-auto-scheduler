@@ -57,7 +57,7 @@ function clearStoredTasks(): void {
 }
 
 function AppRouter() {
-  const { user, onLogout } = useAuth();
+  const { user, accessToken, onLogout } = useAuth();
   const [screen, setScreen] = useState<Screen>('login');
   const [tasks, setTasks] = useState<Task[]>(getStoredTasks);
   const prevUserRef = useRef(user);
@@ -85,8 +85,8 @@ function AppRouter() {
     prevUserRef.current = user;
   }, [user]);
 
-  // Auto-redirect based on auth state
-  const currentScreen = !user ? 'login' : screen === 'login' ? 'dashboard' : screen;
+  // Auto-redirect based on auth state (check both user AND accessToken to prevent stale session)
+  const currentScreen = (!user || !accessToken) ? 'login' : screen === 'login' ? 'dashboard' : screen;
 
   const handleNavigate = useCallback((s: Screen) => {
     setScreen(s);

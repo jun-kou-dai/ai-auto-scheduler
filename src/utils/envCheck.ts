@@ -1,11 +1,5 @@
 // Environment variable validation (Phase A2)
-// Checks for required EXPO_PUBLIC_ keys at startup
-
-const REQUIRED_KEYS = [
-  'EXPO_PUBLIC_GOOGLE_CLIENT_ID',
-  'EXPO_PUBLIC_AI_PROVIDER',
-  'EXPO_PUBLIC_AI_API_KEY',
-] as const;
+// Uses static process.env references so Metro bundler can inline values
 
 export interface EnvCheckResult {
   ok: boolean;
@@ -14,11 +8,18 @@ export interface EnvCheckResult {
 }
 
 export function checkEnv(): EnvCheckResult {
+  // Static references - Metro bundler inlines these at build time
+  // Dynamic access like process.env[key] does NOT work with Metro
+  const envValues: [string, string | undefined][] = [
+    ['EXPO_PUBLIC_GOOGLE_CLIENT_ID', process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID],
+    ['EXPO_PUBLIC_AI_PROVIDER', process.env.EXPO_PUBLIC_AI_PROVIDER],
+    ['EXPO_PUBLIC_AI_API_KEY', process.env.EXPO_PUBLIC_AI_API_KEY],
+  ];
+
   const missing: string[] = [];
   const values: Record<string, string> = {};
 
-  for (const key of REQUIRED_KEYS) {
-    const val = (process.env as Record<string, string | undefined>)[key];
+  for (const [key, val] of envValues) {
     if (!val || val.trim() === '') {
       missing.push(key);
     } else {

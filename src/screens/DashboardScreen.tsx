@@ -42,13 +42,6 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
   // Current time state (updates every 30 seconds for time-aware display)
   const [now, setNow] = useState(new Date());
 
-  // Diagnostic: confirm new code is running (remove after debugging)
-  useEffect(() => {
-    console.log('[Dashboard v2] 時間認識表示コード実行中', {
-      now: now.toISOString(),
-      buildTime: '2026-02-14-fix1',
-    });
-  }, []);
 
   const fetchEvents = useCallback(async () => {
     if (!accessToken) {
@@ -218,22 +211,9 @@ export function DashboardScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
     setExpandedTaskId(null);
   };
 
-  // Diagnostic: change browser tab title (no Console needed)
-  useEffect(() => {
-    if (typeof document !== 'undefined') {
-      document.title = 'DASHBOARD v2 BUILD 2026-02-14';
-    }
-  }, []);
 
   return (
     <View style={styles.container}>
-      {/* Build signature - ALWAYS visible, before any conditional */}
-      <View style={{ backgroundColor: '#FBBF24', padding: 8, zIndex: 9999 }}>
-        <Text style={{ color: '#000', fontSize: 14, fontWeight: '700', textAlign: 'center' }}>
-          BUILD v2 2026-02-14 | 新コード実行中
-        </Text>
-      </View>
-
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>

@@ -63,8 +63,8 @@ export function ProposalScreen({ onNavigate, tasks, onTasksUpdated }: Props) {
 
   const generateScheduleProposal = async () => {
     if (!accessToken) {
-      setError('ログインが必要です');
-      setState('error');
+      // Token missing - redirect to login instead of showing confusing error
+      logout();
       return;
     }
 

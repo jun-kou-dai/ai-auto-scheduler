@@ -61,6 +61,14 @@ export function useAuth() {
 }
 
 function getRestoredUser(): UserInfo | null {
+  // Only restore user if token is still valid
+  // This prevents inconsistent state where user exists but accessToken is null
+  const token = getStoredValue(STORAGE_KEY_TOKEN);
+  const expires = getStoredValue(STORAGE_KEY_EXPIRES);
+  if (!token || !expires || Date.now() >= parseInt(expires, 10)) {
+    return null;
+  }
+
   const stored = getStoredValue(STORAGE_KEY_USER);
   if (stored) {
     try { return JSON.parse(stored); } catch { /* ignore */ }
