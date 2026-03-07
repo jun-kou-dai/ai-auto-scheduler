@@ -270,6 +270,13 @@ function buildSystemPrompt(): string {
 
 重要: 1行に複数のタスクが含まれている場合は、タスクごとに分割して別々のオブジェクトを返してください。区切りの手がかり: 複数の時刻表現、「それから」「あと」「で」+新しい活動。入力行数と出力数は一致しなくて構いません。
 
+重要: タスクでない入力は無視してスキップしてください。以下は無視すべき入力の例:
+- 会話・独り言: 「ちょっと待ってね」「えーと」「あ、違う」「うーん」
+- 挨拶・返事: 「おはよう」「はい」「ありがとう」「了解」
+- 音声入力の誤認識やノイズ: 意味不明な文字列、1〜2文字の断片
+- 指示・命令（アプリへの操作）: 「消して」「やり直し」「キャンセル」
+これらはJSON配列に含めないでください。
+
 各タスクの形式:
 {
   "name": "タスク名（簡潔な名詞句）",
@@ -635,13 +642,25 @@ async function callClaude(taskText: string): Promise<string> {
   }
 }
 
+// Filter out non-task inputs (conversation, greetings, noise)
+function isNonTaskInput(line: string): boolean {
+  const s = line.replace(/\s+/g, '');
+  // Too short to be a task (1-2 chars)
+  if (s.length <= 2) return true;
+  // Conversation / greetings / filler
+  const nonTaskPatterns = /^(ちょっと待って|待ってね|えーと|えっと|うーん|あー|おはよう|こんにちは|こんばんは|はい|うん|いいえ|ありがとう|了解|OK|ok|おk|おっけー|わかった|やっぱ(り)?なし|消して|やり直し|キャンセル|あ、?違う|なんでもない|間違え?た|ごめん|すみません|よろしく)$/i;
+  if (nonTaskPatterns.test(s)) return true;
+  return false;
+}
+
 // Main: Analyze tasks with configured AI provider
 // Falls back to regex parser on AI failure
 export async function analyzeTasks(rawInput: string): Promise<Task[]> {
   const lines = rawInput
     .split('\n')
     .map((l) => l.trim())
-    .filter((l) => l.length > 0);
+    .filter((l) => l.length > 0)
+    .filter((l) => !isNonTaskInput(l));
 
   if (lines.length === 0) {
     throw new Error('タスクが入力されていません');
