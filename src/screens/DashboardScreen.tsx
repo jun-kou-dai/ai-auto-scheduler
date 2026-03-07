@@ -619,28 +619,36 @@ function WeekBar({ events, today, selectedDay, onDayPress }: { events: CalendarE
 
   return (
     <View style={styles.weekBar}>
-      {days.map((d) => (
-        <TouchableOpacity
-          key={d.offset}
-          style={[styles.weekDay, d.isToday && styles.weekDayToday, !d.isToday && d.offset === selectedDay && styles.weekDaySelected]}
-          onPress={() => onDayPress(d.offset)}
-          activeOpacity={0.6}
-        >
-          <Text style={[styles.weekDayWeekday, d.isToday && styles.weekDayWeekdayToday, !d.isToday && d.offset === selectedDay && styles.weekDayWeekdaySelected]}>
-            {d.weekday}
-          </Text>
-          <Text style={[styles.weekDayNum, d.isToday && styles.weekDayNumToday, !d.isToday && d.offset === selectedDay && styles.weekDayNumSelected]}>
-            {d.dayNum}
-          </Text>
-          {d.hasEvents ? (
-            <View style={[styles.weekDot, d.count >= 3 ? styles.weekDotMany : d.count >= 1 ? styles.weekDotSome : null]}>
-              <Text style={styles.weekDotText}>{d.count}</Text>
+      {days.map((d) => {
+        const isSelected = !d.isToday && d.offset === selectedDay;
+        return (
+          <TouchableOpacity
+            key={d.offset}
+            style={[styles.weekDay, isSelected && styles.weekDaySelected]}
+            onPress={() => onDayPress(d.offset)}
+            activeOpacity={0.6}
+          >
+            <Text style={[styles.weekDayWeekday, d.isToday && styles.weekDayWeekdayToday]}>
+              {d.weekday}
+            </Text>
+            <View style={[styles.weekDayNumWrap, d.isToday && styles.weekDayNumWrapToday]}>
+              <Text style={[styles.weekDayNum, d.isToday && styles.weekDayNumToday, isSelected && styles.weekDayNumSelected]}>
+                {d.dayNum}
+              </Text>
             </View>
-          ) : (
-            <View style={styles.weekDotEmpty} />
-          )}
-        </TouchableOpacity>
-      ))}
+            {d.hasEvents ? (
+              <View style={styles.weekDotsRow}>
+                {Array.from({ length: Math.min(d.count, 3) }).map((_, i) => (
+                  <View key={i} style={[styles.weekDotSmall, d.count >= 3 && styles.weekDotSmallMany]} />
+                ))}
+              </View>
+            ) : (
+              <View style={styles.weekDotEmpty} />
+            )}
+            {isSelected && <View style={styles.weekDaySelectedBar} />}
+          </TouchableOpacity>
+        );
+      })}
     </View>
   );
 }
@@ -809,86 +817,89 @@ const styles = StyleSheet.create({
   // Week bar container (sticky above scroll)
   weekBarContainer: {
     paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 8,
-    backgroundColor: '#F8FAFC',
+    paddingTop: 6,
+    paddingBottom: 6,
+    backgroundColor: '#FFF',
     borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
+    borderBottomColor: '#F1F5F9',
   },
 
   // Week overview bar
   weekBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    backgroundColor: '#FFF',
-    borderRadius: 16,
-    padding: 6,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 4,
-    elevation: 2,
   },
   weekDay: {
     flex: 1,
     alignItems: 'center',
-    paddingVertical: 8,
-    borderRadius: 12,
-  },
-  weekDayToday: {
-    backgroundColor: '#3B82F6',
+    paddingVertical: 6,
+    position: 'relative' as const,
   },
   weekDaySelected: {
-    backgroundColor: '#DBEAFE',
-    borderRadius: 12,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 10,
   },
   weekDayWeekday: {
     fontSize: 11,
     color: '#94A3B8',
-    fontWeight: '600',
+    fontWeight: '500',
+    letterSpacing: 0.5,
   },
   weekDayWeekdayToday: {
-    color: '#DBEAFE',
+    color: '#EF4444',
+    fontWeight: '700',
   },
-  weekDayWeekdaySelected: {
-    color: '#3B82F6',
+  weekDayNumWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+  },
+  weekDayNumWrapToday: {
+    backgroundColor: '#EF4444',
   },
   weekDayNum: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#475569',
-    marginTop: 1,
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#334155',
   },
   weekDayNumToday: {
     color: '#FFF',
+    fontWeight: '700',
   },
   weekDayNumSelected: {
-    color: '#1E40AF',
-  },
-  weekDot: {
-    marginTop: 4,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: '#93C5FD',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  weekDotSome: {
-    backgroundColor: '#3B82F6',
-  },
-  weekDotMany: {
-    backgroundColor: '#1E40AF',
-  },
-  weekDotText: {
-    fontSize: 10,
+    color: '#3B82F6',
     fontWeight: '700',
-    color: '#FFF',
+  },
+  weekDotsRow: {
+    flexDirection: 'row',
+    marginTop: 4,
+    gap: 2,
+    height: 6,
+  },
+  weekDotSmall: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: '#60A5FA',
+  },
+  weekDotSmallMany: {
+    backgroundColor: '#3B82F6',
   },
   weekDotEmpty: {
     marginTop: 4,
-    width: 20,
-    height: 20,
+    height: 6,
+  },
+  weekDaySelectedBar: {
+    position: 'absolute' as const,
+    bottom: 0,
+    left: '25%',
+    right: '25%',
+    height: 2,
+    borderRadius: 1,
+    backgroundColor: '#3B82F6',
   },
 
   // Section title with current time
@@ -926,9 +937,9 @@ const styles = StyleSheet.create({
 
   // Unassigned tasks notification banner
   unassignedBanner: {
-    backgroundColor: '#FFF7ED',
+    backgroundColor: '#FAF5FF',
     borderWidth: 1,
-    borderColor: '#FED7AA',
+    borderColor: '#E9D5FF',
     borderRadius: 12,
     padding: 14,
     marginBottom: 16,
@@ -941,16 +952,16 @@ const styles = StyleSheet.create({
   unassignedBannerTitle: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#C2410C',
+    color: '#7C3AED',
   },
   unassignedBannerSub: {
     fontSize: 12,
-    color: '#EA580C',
+    color: '#8B5CF6',
     marginTop: 2,
   },
   unassignedBannerArrow: {
     fontSize: 20,
-    color: '#EA580C',
+    color: '#8B5CF6',
     fontWeight: '700',
   },
 
@@ -999,9 +1010,9 @@ const styles = StyleSheet.create({
   },
   eventCardCurrent: {
     borderLeftWidth: 3,
-    borderLeftColor: '#3B82F6',
-    backgroundColor: '#EFF6FF',
-    borderColor: '#93C5FD',
+    borderLeftColor: '#10B981',
+    backgroundColor: '#F0FDF4',
+    borderColor: '#86EFAC',
   },
   textPast: {
     color: '#94A3B8',
@@ -1013,7 +1024,7 @@ const styles = StyleSheet.create({
     marginRight: 4,
   },
   currentBadge: {
-    backgroundColor: '#3B82F6',
+    backgroundColor: '#10B981',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
@@ -1033,7 +1044,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     minWidth: 60,
   },
-  eventTimeText: { fontSize: 13, color: '#3B82F6', fontWeight: '600' },
+  eventTimeText: { fontSize: 13, color: '#6366F1', fontWeight: '600' },
   eventTimeSep: { fontSize: 10, color: '#94A3B8' },
   eventTitle: { fontSize: 14, color: '#1E293B', flex: 1 },
   expandArrow: {
