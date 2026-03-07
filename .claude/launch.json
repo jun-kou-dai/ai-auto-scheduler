@@ -4,7 +4,7 @@
     {
       "name": "ai-auto-scheduler",
       "runtimeExecutable": "npx",
-      "runtimeArgs": ["expo", "start", "--web", "--port", "8081", "--clear"],
+      "runtimeArgs": ["serve", "docs", "-l", "8081", "--single"],
       "port": 8081
     }
   ]

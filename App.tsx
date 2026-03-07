@@ -57,10 +57,50 @@ function clearStoredTasks(): void {
   } catch { /* ignore */ }
 }
 
+// Test mode: ?test=confirm bypasses auth and shows ConfirmScreen with mock data
+function getTestMode(): Screen | null {
+  if (typeof window === 'undefined') return null;
+  const params = new URLSearchParams(window.location.search);
+  const test = params.get('test');
+  if (test === 'confirm' || test === 'taskInput' || test === 'proposal') return test as Screen;
+  return null;
+}
+
+function getTestTasks(): Task[] {
+  const today = new Date().toISOString().split('T')[0];
+  return [
+    {
+      id: 'test-1', raw: '今日の夜7時に野球観戦', name: '野球観戦',
+      description: '野球観戦を楽しむ', duration_minutes: 120, deadline: null,
+      preferred_start: `${today}T19:00:00`, priority: '中' as const,
+      preferred_time: '夜' as const, category: 'その他' as const, status: 'unassigned' as const,
+      reasoning: '野球観戦は通常2時間程度。夜7時という指定あり。',
+      confidence: { duration: 'medium' as const, preferred_start: 'high' as const, priority: 'low' as const },
+    },
+    {
+      id: 'test-2', raw: 'ちょっと掃除', name: '掃除',
+      description: '軽い掃除', duration_minutes: 30, deadline: null,
+      preferred_start: null, priority: '低' as const,
+      preferred_time: null, category: '家事' as const, status: 'unassigned' as const,
+      reasoning: '「ちょっと」という表現から短時間と推定。優先度低め。',
+      confidence: { duration: 'low' as const, preferred_start: 'low' as const, priority: 'low' as const },
+    },
+    {
+      id: 'test-3', raw: '18時から2時間読書', name: '読書',
+      description: '読書に取り組む', duration_minutes: 120, deadline: null,
+      preferred_start: `${today}T18:00:00`, priority: '中' as const,
+      preferred_time: '夜' as const, category: '勉強' as const, status: 'unassigned' as const,
+      reasoning: '「2時間」と明示的に指定。18時から開始。',
+      confidence: { duration: 'high' as const, preferred_start: 'high' as const, priority: 'low' as const },
+    },
+  ];
+}
+
 function AppRouter() {
   const { user, accessToken, onLogout } = useAuth();
-  const [screen, setScreen] = useState<Screen>('login');
-  const [tasks, setTasks] = useState<Task[]>(getStoredTasks);
+  const testMode = getTestMode();
+  const [screen, setScreen] = useState<Screen>(testMode || 'login');
+  const [tasks, setTasks] = useState<Task[]>(testMode ? getTestTasks : getStoredTasks);
   const prevUserRef = useRef(user);
 
   // Persist tasks to localStorage whenever they change
@@ -87,7 +127,8 @@ function AppRouter() {
   }, [user]);
 
   // Auto-redirect based on auth state (check both user AND accessToken to prevent stale session)
-  const currentScreen = (!user || !accessToken) ? 'login' : screen === 'login' ? 'dashboard' : screen;
+  // Test mode bypasses auth check
+  const currentScreen = testMode ? screen : (!user || !accessToken) ? 'login' : screen === 'login' ? 'dashboard' : screen;
 
   const handleNavigate = useCallback((s: Screen) => {
     setScreen(s);
